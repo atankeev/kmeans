@@ -62,6 +62,12 @@ type elkanState struct {
 	n int
 	// k - количество кластеров (для вычисления индексов)
 	k int
+	// oldCenters - старые центры для проверки сходимости (переиспользуется между итерациями)
+	oldCenters [][]float64
+	// newCenters - новые центры (переиспользуется между итерациями)
+	newCenters [][]float64
+	// dim - размерность данных (для переиспользования памяти)
+	dim int
 }
 
 // Result represents the result of K-means clustering
@@ -569,23 +575,22 @@ func (k *Kmeans) elkanKMeans(data [][]float64) *Result {
 			break
 		}
 
-		// Save the old centers
-		oldCenters := make([][]float64, len(centers))
+		// Save the old centers (reusing pre-allocated slice)
 		for i, center := range centers {
-			copy(oldCenters[i], center)
+			copy(state.oldCenters[i], center)
 		}
 
-		// Update the centers
-		newCenters := k.updateCentersElkan(data, state)
+		// Update the centers (reusing pre-allocated slice)
+		newCenters := k.updateCentersElkan(data, state, state.newCenters)
 		centers = newCenters
 
 		// Update the Elkan state
-		updateElkanState(oldCenters, newCenters, state)
+		updateElkanState(state.oldCenters, newCenters, state)
 
 		iteration++
 
 		// Check for convergence of the centers
-		converged := checkConvergence(oldCenters, newCenters, k.Tol)
+		converged := checkConvergence(state.oldCenters, newCenters, k.Tol)
 		if converged {
 			// Convergence reached: the centers have stabilized
 			break
@@ -613,14 +618,27 @@ func (k *Kmeans) elkanKMeans(data [][]float64) *Result {
 // Returns:
 //
 //	A slice of new cluster centers, where each center is a slice of float64.
-func (k *Kmeans) updateCentersElkan(data [][]float64, state *elkanState) [][]float64 {
-	dim := len(data[0])
-	newCenters := make([][]float64, k.NClusters)
+func (k *Kmeans) updateCentersElkan(data [][]float64, state *elkanState, reuse [][]float64) [][]float64 {
+	dim := state.dim
+	if dim == 0 {
+		dim = len(data[0])
+	}
+
+	newCenters := reuse
+	if newCenters == nil || len(newCenters) != k.NClusters {
+		newCenters = make([][]float64, k.NClusters)
+		for i := range k.NClusters {
+			newCenters[i] = make([]float64, dim)
+		}
+	}
+
 	clusterSizes := make([]int, k.NClusters)
 
-	// Initialize centers to zero
+	// Reset centers to zero
 	for i := range k.NClusters {
-		newCenters[i] = make([]float64, dim)
+		for d := range dim {
+			newCenters[i][d] = 0
+		}
 	}
 
 	// Sum the coordinates of the points for each cluster
@@ -784,6 +802,7 @@ func elkanAssignStep(data [][]float64, centers [][]float64, state *elkanState) b
 func initializeElkanState(data [][]float64, centers [][]float64) *elkanState {
 	n := len(data)
 	k := len(centers)
+	dim := len(data[0])
 
 	state := &elkanState{
 		upperBounds:     make([]float64, n),
@@ -793,6 +812,14 @@ func initializeElkanState(data [][]float64, centers [][]float64) *elkanState {
 		centerMovement:  make([]float64, k),
 		n:               n,
 		k:               k,
+		dim:             dim,
+		oldCenters:      make([][]float64, k),
+		newCenters:      make([][]float64, k),
+	}
+
+	for i := range k {
+		state.oldCenters[i] = make([]float64, dim)
+		state.newCenters[i] = make([]float64, dim)
 	}
 
 	// Calculate initial distances between centers
