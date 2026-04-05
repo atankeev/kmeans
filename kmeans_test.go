@@ -2864,7 +2864,6 @@ func TestUpdateCentersElkan_Basic(t *testing.T) {
 
 	state := &elkanState{
 		assignments: []int{0, 1, 0, 1},
-		dim:         2,
 	}
 
 	data := [][]float64{
@@ -2874,7 +2873,7 @@ func TestUpdateCentersElkan_Basic(t *testing.T) {
 		{7.0, 8.0},
 	}
 
-	centers := k.updateCentersElkan(data, state, nil)
+	centers := k.updateCentersElkan(data, state)
 
 	require.Len(t, centers, 2)
 
@@ -2890,7 +2889,6 @@ func TestUpdateCentersElkan_EmptyCluster(t *testing.T) {
 
 	state := &elkanState{
 		assignments: []int{0, 0, 1, 1},
-		dim:         2,
 	}
 
 	data := [][]float64{
@@ -2900,7 +2898,7 @@ func TestUpdateCentersElkan_EmptyCluster(t *testing.T) {
 		{6.0, 7.0},
 	}
 
-	centers := k.updateCentersElkan(data, state, nil)
+	centers := k.updateCentersElkan(data, state)
 
 	require.Len(t, centers, 3)
 	require.Len(t, centers[2], 2)
@@ -2912,7 +2910,6 @@ func TestUpdateCentersElkan_AllClustersFilled(t *testing.T) {
 
 	state := &elkanState{
 		assignments: []int{0, 1, 0, 1},
-		dim:         2,
 	}
 
 	data := [][]float64{
@@ -2922,7 +2919,7 @@ func TestUpdateCentersElkan_AllClustersFilled(t *testing.T) {
 		{8.0, 10.0},
 	}
 
-	centers := k.updateCentersElkan(data, state, nil)
+	centers := k.updateCentersElkan(data, state)
 
 	require.Len(t, centers, 2)
 	center0Avg := (centers[0][0] + centers[0][1]) / 2
