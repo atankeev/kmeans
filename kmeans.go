@@ -50,14 +50,18 @@ var (
 type elkanState struct {
 	// upperBounds[i] - верхняя граница расстояния от точки i до её текущего центра
 	upperBounds []float64
-	// lowerBounds[i][j] - нижняя граница расстояния от точки i до центра j
-	lowerBounds [][]float64
+	// lowerBounds - нижняя граница расстояния от точки i до центра j (flat: i*k + j)
+	lowerBounds []float64
 	// assignments[i] - текущий кластер точки i
 	assignments []int
-	// centerDistances[i][j] - расстояние между центрами i и j
-	centerDistances [][]float64
+	// centerDistances - расстояние между центрами i и j (flat: i*k + j)
+	centerDistances []float64
 	// centerMovement[i] - расстояние, на которое переместился центр i
 	centerMovement []float64
+	// n - количество точек (для вычисления индексов)
+	n int
+	// k - количество кластеров (для вычисления индексов)
+	k int
 }
 
 // Result represents the result of K-means clustering
@@ -651,7 +655,7 @@ func (k *Kmeans) updateCentersElkan(data [][]float64, state *elkanState) [][]flo
 //	newCenters: The new cluster centers, where each center is a slice of float64.
 //	state:      The current Elkan state, containing bounds and assignments for each point.
 func updateElkanState(oldCenters, newCenters [][]float64, state *elkanState) {
-	k := len(newCenters)
+	k := state.k
 
 	// Calculate the distances the centers moved
 	for i := range k {
@@ -662,13 +666,13 @@ func updateElkanState(oldCenters, newCenters [][]float64, state *elkanState) {
 	for i := range k {
 		for j := i + 1; j < k; j++ {
 			dist := euclideanDistance(newCenters[i], newCenters[j])
-			state.centerDistances[i][j] = dist
-			state.centerDistances[j][i] = dist
+			state.centerDistances[i*k+j] = dist
+			state.centerDistances[j*k+i] = dist
 		}
 	}
 
 	// Update the bounds for each point
-	n := len(state.upperBounds)
+	n := state.n
 	for i := range n {
 		// Update the upper bound
 		currentCenter := state.assignments[i]
@@ -676,7 +680,8 @@ func updateElkanState(oldCenters, newCenters [][]float64, state *elkanState) {
 
 		// Update the lower bounds
 		for j := range k {
-			state.lowerBounds[i][j] = math.Max(0, state.lowerBounds[i][j]-state.centerMovement[j])
+			idx := i*k + j
+			state.lowerBounds[idx] = math.Max(0, state.lowerBounds[idx]-state.centerMovement[j])
 		}
 	}
 }
@@ -696,7 +701,7 @@ func updateElkanState(oldCenters, newCenters [][]float64, state *elkanState) {
 //
 //	true if any point changed its cluster assignment during this step; false otherwise.
 func elkanAssignStep(data [][]float64, centers [][]float64, state *elkanState) bool {
-	k := len(centers)
+	k := state.k
 	changed := false
 
 	for i, point := range data {
@@ -710,8 +715,9 @@ func elkanAssignStep(data [][]float64, centers [][]float64, state *elkanState) b
 				continue
 			}
 
-			if state.centerDistances[currentCenter][j] < minCenterDistance {
-				minCenterDistance = state.centerDistances[currentCenter][j]
+			cd := state.centerDistances[currentCenter*k+j]
+			if cd < minCenterDistance {
+				minCenterDistance = cd
 			}
 		}
 
@@ -722,7 +728,7 @@ func elkanAssignStep(data [][]float64, centers [][]float64, state *elkanState) b
 		// Recalculate the exact distance to the current center
 		actualDistance := euclideanDistance(point, centers[currentCenter])
 		state.upperBounds[i] = actualDistance
-		state.lowerBounds[i][currentCenter] = actualDistance
+		state.lowerBounds[i*k+currentCenter] = actualDistance
 
 		// Find the best center
 		bestCenter := currentCenter
@@ -733,13 +739,16 @@ func elkanAssignStep(data [][]float64, centers [][]float64, state *elkanState) b
 				continue
 			}
 
+			lbIdx := i*k + j
+			cdIdx := currentCenter*k + j
+
 			// Optimization 2: Use the triangle inequality
-			if state.upperBounds[i] > state.lowerBounds[i][j] &&
-				state.upperBounds[i] > state.centerDistances[currentCenter][j]/2 {
+			if state.upperBounds[i] > state.lowerBounds[lbIdx] &&
+				state.upperBounds[i] > state.centerDistances[cdIdx]/2 {
 
 				// Calculate the exact distance only if the optimizations didn't work
 				distance := euclideanDistance(point, centers[j])
-				state.lowerBounds[i][j] = distance
+				state.lowerBounds[lbIdx] = distance
 
 				if distance < bestDistance {
 					bestDistance = distance
@@ -778,26 +787,20 @@ func initializeElkanState(data [][]float64, centers [][]float64) *elkanState {
 
 	state := &elkanState{
 		upperBounds:     make([]float64, n),
-		lowerBounds:     make([][]float64, n),
+		lowerBounds:     make([]float64, n*k),
 		assignments:     make([]int, n),
-		centerDistances: make([][]float64, k),
+		centerDistances: make([]float64, k*k),
 		centerMovement:  make([]float64, k),
-	}
-
-	// Initialize arrays for lower bounds and center distances
-	for i := range n {
-		state.lowerBounds[i] = make([]float64, k)
-	}
-	for i := range k {
-		state.centerDistances[i] = make([]float64, k)
+		n:               n,
+		k:               k,
 	}
 
 	// Calculate initial distances between centers
 	for i := range k {
 		for j := i + 1; j < k; j++ {
 			dist := euclideanDistance(centers[i], centers[j])
-			state.centerDistances[i][j] = dist
-			state.centerDistances[j][i] = dist
+			state.centerDistances[i*k+j] = dist
+			state.centerDistances[j*k+i] = dist
 		}
 	}
 
@@ -808,7 +811,7 @@ func initializeElkanState(data [][]float64, centers [][]float64) *elkanState {
 
 		for j, center := range centers {
 			dist := euclideanDistance(point, center)
-			state.lowerBounds[i][j] = dist
+			state.lowerBounds[i*k+j] = dist
 
 			if dist < minDist {
 				minDist = dist

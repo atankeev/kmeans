@@ -2100,6 +2100,7 @@ func TestInitializeElkanState(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			k := len(tt.centers)
 			state := initializeElkanState(tt.data, tt.centers)
 			if !reflect.DeepEqual(state.assignments, tt.wantAssignments) {
 				t.Errorf("assignments: got %v, want %v", state.assignments, tt.wantAssignments)
@@ -2112,13 +2113,14 @@ func TestInitializeElkanState(t *testing.T) {
 					t.Errorf("upperBounds[%d]: got %v, want %v", i, state.upperBounds[i], tt.wantUpperBounds[i])
 				}
 			}
-			if len(state.lowerBounds) != len(tt.wantLowerBounds) {
+			if len(state.lowerBounds) != len(tt.wantLowerBounds)*k {
 				t.Errorf("lowerBounds: got %v, want %v", state.lowerBounds, tt.wantLowerBounds)
 			}
-			for i := range state.lowerBounds {
-				for j := range state.lowerBounds[i] {
-					if math.Abs(state.lowerBounds[i][j]-tt.wantLowerBounds[i][j]) > 1e-6 {
-						t.Errorf("lowerBounds[%d][%d]: got %v, want %v", i, j, state.lowerBounds[i][j], tt.wantLowerBounds[i][j])
+			for i := range tt.wantLowerBounds {
+				for j := range tt.wantLowerBounds[i] {
+					idx := i*k + j
+					if math.Abs(state.lowerBounds[idx]-tt.wantLowerBounds[i][j]) > 1e-6 {
+						t.Errorf("lowerBounds[%d][%d]: got %v, want %v", i, j, state.lowerBounds[idx], tt.wantLowerBounds[i][j])
 					}
 				}
 			}
@@ -2931,14 +2933,12 @@ func TestUpdateElkanState_Basic(t *testing.T) {
 
 	state := &elkanState{
 		centerMovement:  make([]float64, 2),
-		centerDistances: make([][]float64, 2),
+		centerDistances: make([]float64, 4),
 		upperBounds:     []float64{5.0, 5.0},
-		lowerBounds:     [][]float64{{0, 0}, {0, 0}},
+		lowerBounds:     make([]float64, 4),
 		assignments:     []int{0, 1},
-	}
-
-	for i := range 2 {
-		state.centerDistances[i] = make([]float64, 2)
+		n:               2,
+		k:               2,
 	}
 
 	updateElkanState(oldCenters, newCenters, state)
@@ -2953,14 +2953,12 @@ func TestUpdateElkanState_CenterMovement(t *testing.T) {
 
 	state := &elkanState{
 		centerMovement:  make([]float64, 2),
-		centerDistances: make([][]float64, 2),
+		centerDistances: make([]float64, 4),
 		upperBounds:     []float64{10.0, 10.0},
-		lowerBounds:     [][]float64{{0, 0}, {0, 0}},
+		lowerBounds:     make([]float64, 4),
 		assignments:     []int{0, 1},
-	}
-
-	for i := range 2 {
-		state.centerDistances[i] = make([]float64, 2)
+		n:               2,
+		k:               2,
 	}
 
 	updateElkanState(oldCenters, newCenters, state)
@@ -2978,23 +2976,21 @@ func TestUpdateElkanState_BoundsUpdate(t *testing.T) {
 
 	state := &elkanState{
 		centerMovement:  make([]float64, 2),
-		centerDistances: make([][]float64, 2),
+		centerDistances: make([]float64, 4),
 		upperBounds:     []float64{5.0, 5.0},
-		lowerBounds:     [][]float64{{1.0, 1.0}, {1.0, 1.0}},
+		lowerBounds:     []float64{1.0, 1.0, 1.0, 1.0},
 		assignments:     []int{0, 1},
-	}
-
-	for i := range 2 {
-		state.centerDistances[i] = make([]float64, 2)
+		n:               2,
+		k:               2,
 	}
 
 	upperBefore := state.upperBounds[0]
-	lowerBefore := state.lowerBounds[0][1]
+	lowerBefore := state.lowerBounds[1]
 
 	updateElkanState(oldCenters, newCenters, state)
 
 	require.True(t, state.upperBounds[0] >= upperBefore)
-	require.True(t, state.lowerBounds[0][1] <= lowerBefore)
+	require.True(t, state.lowerBounds[1] <= lowerBefore)
 }
 
 func TestElkanAssignStep_Basic(t *testing.T) {
@@ -3418,7 +3414,7 @@ func TestElkanAssignStep_Optimization1(t *testing.T) {
 
 	state := initializeElkanState(data, centers)
 	state.upperBounds[0] = 1.0
-	state.centerDistances[0][1] = 138.6
+	state.centerDistances[1] = 138.6
 
 	elkanAssignStep(data, centers, state)
 
