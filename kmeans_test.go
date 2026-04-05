@@ -2573,6 +2573,26 @@ func TestClusterSingle_DefaultAlgorithm(t *testing.T) {
 	require.Len(t, result.Centroids, 2)
 }
 
+func TestClusterSingle_ElkanAlgorithm(t *testing.T) {
+	kmeans := NewWithOptions(2,
+		WithAlgorithm(AlgorithmElkan),
+		WithRandomSeed(42),
+	)
+
+	data := [][]float64{
+		{1.0, 2.0},
+		{1.5, 1.8},
+		{5.0, 8.0},
+		{8.0, 8.0},
+	}
+
+	result := kmeans.clusterSingle(data)
+
+	require.Len(t, result.Centroids, 2)
+	require.Len(t, result.Labels, 4)
+	require.Positive(t, result.Inertia)
+}
+
 func BenchmarkLloyd_KMeansPlusPlus(b *testing.B) {
 	data := make([][]float64, 1000)
 	for i := 0; i < 1000; i++ {
@@ -3265,4 +3285,187 @@ func TestCluster_ValidationErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidate_NInit(t *testing.T) {
+	k := &Kmeans{
+		NClusters:            2,
+		NInit:                0,
+		MaxIter:              100,
+		Tol:                  1e-4,
+		NCentroidsInitTrials: 5,
+		RandomState:          rand.New(rand.NewSource(42)),
+		Algorithm:            AlgorithmLloyd,
+		initialized:          true,
+	}
+
+	err := k.Validate()
+	require.Error(t, err)
+}
+
+func TestValidate_MaxIter(t *testing.T) {
+	k := &Kmeans{
+		NClusters:            2,
+		NInit:                1,
+		MaxIter:              0,
+		Tol:                  1e-4,
+		NCentroidsInitTrials: 5,
+		RandomState:          rand.New(rand.NewSource(42)),
+		Algorithm:            AlgorithmLloyd,
+		initialized:          true,
+	}
+
+	err := k.Validate()
+	require.Error(t, err)
+}
+
+func TestValidate_Tol(t *testing.T) {
+	k := &Kmeans{
+		NClusters:            2,
+		NInit:                1,
+		MaxIter:              100,
+		Tol:                  0,
+		NCentroidsInitTrials: 5,
+		RandomState:          rand.New(rand.NewSource(42)),
+		Algorithm:            AlgorithmLloyd,
+		initialized:          true,
+	}
+
+	err := k.Validate()
+	require.Error(t, err)
+}
+
+func TestValidate_NCentroidsInitTrials(t *testing.T) {
+	k := &Kmeans{
+		NClusters:            2,
+		NInit:                1,
+		MaxIter:              100,
+		Tol:                  1e-4,
+		NCentroidsInitTrials: 0,
+		RandomState:          rand.New(rand.NewSource(42)),
+		Algorithm:            AlgorithmLloyd,
+		initialized:          true,
+	}
+
+	err := k.Validate()
+	require.Error(t, err)
+}
+
+func TestValidate_RandomState(t *testing.T) {
+	k := &Kmeans{
+		NClusters:            2,
+		NInit:                1,
+		MaxIter:              100,
+		Tol:                  1e-4,
+		NCentroidsInitTrials: 5,
+		RandomState:          nil,
+		Algorithm:            AlgorithmLloyd,
+		initialized:          true,
+	}
+
+	err := k.Validate()
+	require.Error(t, err)
+}
+
+func TestValidate_Algorithm(t *testing.T) {
+	k := &Kmeans{
+		NClusters:            2,
+		NInit:                1,
+		MaxIter:              100,
+		Tol:                  1e-4,
+		NCentroidsInitTrials: 5,
+		RandomState:          rand.New(rand.NewSource(42)),
+		Algorithm:            "invalid",
+		initialized:          true,
+	}
+
+	err := k.Validate()
+	require.Error(t, err)
+}
+
+func TestElkanKMeans_ConvergenceByChanged(t *testing.T) {
+	kmeans := NewWithOptions(2,
+		WithAlgorithm(AlgorithmElkan),
+		WithInitMethod(InitKMeansPlusPlus),
+		WithRandomSeed(42),
+		WithMaxIter(50),
+		WithTol(1e-10),
+	)
+
+	data := [][]float64{
+		{1.0, 1.0},
+		{1.1, 1.1},
+		{1.2, 1.2},
+		{10.0, 10.0},
+		{10.1, 10.1},
+		{10.2, 10.2},
+	}
+
+	result := kmeans.elkanKMeans(data)
+
+	require.Len(t, result.Centroids, 2)
+	require.Len(t, result.Labels, 6)
+	require.Positive(t, result.Inertia)
+}
+
+func TestElkanAssignStep_Optimization1(t *testing.T) {
+	data := [][]float64{
+		{0.0, 0.0},
+		{100.0, 100.0},
+	}
+
+	centers := [][]float64{{1.0, 1.0}, {99.0, 99.0}}
+
+	state := initializeElkanState(data, centers)
+	state.upperBounds[0] = 1.0
+	state.centerDistances[0][1] = 138.6
+
+	elkanAssignStep(data, centers, state)
+
+	require.Equal(t, 0, state.assignments[0])
+}
+
+func TestElkanAssignStep_Optimization2(t *testing.T) {
+	data := [][]float64{
+		{5.0, 5.0},
+		{50.0, 50.0},
+	}
+
+	centers := [][]float64{{1.0, 1.0}, {99.0, 99.0}}
+
+	state := initializeElkanState(data, centers)
+
+	elkanAssignStep(data, centers, state)
+
+	require.Len(t, state.assignments, 2)
+}
+
+func TestWeightedRandomChoice_NaN(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+
+	weights := []float64{1.0, math.NaN(), 2.0}
+
+	result := weightedRandomChoice(weights, rng)
+
+	require.True(t, result >= 0 && result < len(weights))
+}
+
+func TestWeightedRandomChoice_Inf(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+
+	weights := []float64{1.0, math.Inf(1), 2.0}
+
+	result := weightedRandomChoice(weights, rng)
+
+	require.True(t, result >= 0 && result < len(weights))
+}
+
+func TestWeightedRandomChoice_ZeroTotalWeight(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+
+	weights := []float64{0.0, 0.0, 0.0}
+
+	result := weightedRandomChoice(weights, rng)
+
+	require.True(t, result >= 0 && result < len(weights))
 }
