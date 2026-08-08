@@ -337,10 +337,12 @@ func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
 	copy(centroids[0], data[firstCenterIdx])
 	usedIndices[firstCenterIdx] = struct{}{}
 
+	distances := make([]float64, len(data))
+
 	// Select remaining centroids
 	for len(centroids) < k.NClusters {
 		// Compute squared distances to nearest centroids for each data point
-		distances := computeDistancesToCenters(data, centroids)
+		distances = computeDistancesToCenters(data, centroids, distances)
 
 		// When nLocalTrials <= 1, use standard k-means++ initialization
 		if nLocalTrials <= 1 {
@@ -463,21 +465,18 @@ func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 func (k *Kmeans) lloydKMeans(data [][]float64) *Result {
 	centers := k.initCentroids(data)
 
-	var (
-		labels []int
-	)
+	labels := make([]int, len(data))
 
 	for range k.MaxIter {
 		// Step 1: Assign each data point to the nearest cluster center
-		newLabels := assignPointsToClusters(data, centers)
+		labels = assignPointsToClusters(data, centers, labels)
 
 		// Step 2: Update cluster centers based on current assignments (Lloyd's update step)
 		// This computes the mean of all points assigned to each cluster.
-		newCenters := k.updateCentersLloyd(data, newLabels)
+		newCenters := k.updateCentersLloyd(data, labels)
 
 		// Update centers and labels
 		centers = newCenters
-		labels = newLabels
 
 		// Check for convergence
 		converged := checkConvergence(centers, newCenters, k.Tol)
@@ -487,7 +486,7 @@ func (k *Kmeans) lloydKMeans(data [][]float64) *Result {
 	}
 
 	// Assign points to clusters again to ensure final assignments
-	labels = assignPointsToClusters(data, centers)
+	labels = assignPointsToClusters(data, centers, labels)
 
 	finalInertia := calculateInertiaByLabels(data, centers, labels)
 
@@ -572,6 +571,7 @@ func (k *Kmeans) elkanKMeans(data [][]float64) *Result {
 		// Save the old centers
 		oldCenters := make([][]float64, len(centers))
 		for i, center := range centers {
+			oldCenters[i] = make([]float64, len(center))
 			copy(oldCenters[i], center)
 		}
 
@@ -839,10 +839,7 @@ func initializeElkanState(data [][]float64, centers [][]float64) *elkanState {
 // Returns:
 //
 //	A slice of integers where the i-th element is the index of the nearest center for data point i.
-func assignPointsToClusters(data [][]float64, centers [][]float64) []int {
-	n := len(data)
-	labels := make([]int, n)
-
+func assignPointsToClusters(data [][]float64, centers [][]float64, labels []int) []int {
 	for i, point := range data {
 		minDistance := math.Inf(1)
 		bestCluster := 0
@@ -870,11 +867,50 @@ func squaredEuclideanDistance(p1, p2 []float64) float64 {
 
 	for i := range p1 {
 		diff := p1[i] - p2[i]
-		sum += diff * diff
+		// sum += diff * diff -> but more accurate
+		sum = math.FMA(diff, diff, sum)
 	}
 
 	return sum
 }
+
+//func squaredEuclideanDistance(p1, p2 []float64) float64 {
+//	switch len(p1) {
+//	case 2:
+//		d0 := p1[0] - p2[0]
+//		d1 := p1[1] - p2[1]
+//		return d0*d0 + d1*d1
+//	case 3:
+//		d0 := p1[0] - p2[0]
+//		d1 := p1[1] - p2[1]
+//		d2 := p1[2] - p2[2]
+//		return d0*d0 + d1*d1 + d2*d2
+//	default:
+//		sum0, sum1, sum2, sum3 := 0.0, 0.0, 0.0, 0.0
+//		n := len(p1)
+//		i := 0
+//
+//		// Развёртка цикла по 4 элемента
+//		for ; i <= n-4; i += 4 {
+//			d0 := p1[i] - p2[i]
+//			d1 := p1[i+1] - p2[i+1]
+//			d2 := p1[i+2] - p2[i+2]
+//			d3 := p1[i+3] - p2[i+3]
+//			sum0 += d0 * d0
+//			sum1 += d1 * d1
+//			sum2 += d2 * d2
+//			sum3 += d3 * d3
+//		}
+//
+//		// Остаток
+//		for ; i < n; i++ {
+//			d := p1[i] - p2[i]
+//			sum0 += d * d
+//		}
+//
+//		return sum0 + sum1 + sum2 + sum3
+//	}
+//}
 
 // calculateInertia calculates the total inertia (within-cluster sum of squares) for the given data points and cluster centers.
 // Inertia is the sum of squared distances from each data point to its nearest cluster center.
@@ -886,9 +922,7 @@ func calculateInertia(data [][]float64, centers [][]float64) float64 {
 		minDist := math.Inf(1)
 		for _, center := range centers {
 			dist := squaredEuclideanDistance(point, center)
-			if dist < minDist {
-				minDist = dist
-			}
+			minDist = math.Min(minDist, dist)
 		}
 		totalInertia += minDist
 	}
@@ -921,16 +955,12 @@ func calculateInertiaByLabels(data [][]float64, centers [][]float64, labels []in
 
 // computeDistancesToCenters calculates the minimum squared Euclidean distance from each data point to its nearest cluster center.
 // Returns a slice where distances[i] is the squared distance from data point i to its closest center.
-func computeDistancesToCenters(data [][]float64, centers [][]float64) []float64 {
-	distances := make([]float64, len(data))
-
+func computeDistancesToCenters(data [][]float64, centers [][]float64, distances []float64) []float64 {
 	for i, point := range data {
 		minDist := math.Inf(1)
 		for _, center := range centers {
 			dist := squaredEuclideanDistance(point, center)
-			if dist < minDist {
-				minDist = dist
-			}
+			minDist = math.Min(minDist, dist)
 		}
 		distances[i] = minDist
 	}

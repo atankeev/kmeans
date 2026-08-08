@@ -740,7 +740,7 @@ func TestComputeDistancesToCenters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := computeDistancesToCenters(tt.data, tt.centers)
+			result := computeDistancesToCenters(tt.data, tt.centers, make([]float64, len(tt.data)))
 
 			if len(result) != len(tt.expected) {
 				t.Errorf("computeDistancesToCenters() returned %d distances, want %d", len(result), len(tt.expected))
@@ -769,7 +769,7 @@ func TestComputeDistancesToCenters_EdgeCases(t *testing.T) {
 	t.Run("nil data", func(t *testing.T) {
 		var data [][]float64
 		centers := [][]float64{{1.0, 2.0}}
-		result := computeDistancesToCenters(data, centers)
+		result := computeDistancesToCenters(data, centers, make([]float64, len(data)))
 		expected := make([]float64, 0)
 		if !reflect.DeepEqual(result, expected) {
 			t.Errorf("computeDistancesToCenters(nil, %v) = %v, want %v", centers, result, expected)
@@ -779,7 +779,7 @@ func TestComputeDistancesToCenters_EdgeCases(t *testing.T) {
 	t.Run("nil centers", func(t *testing.T) {
 		data := [][]float64{{1.0, 2.0}, {3.0, 4.0}}
 		var centers [][]float64
-		result := computeDistancesToCenters(data, centers)
+		result := computeDistancesToCenters(data, centers, make([]float64, len(data)))
 		expected := []float64{math.Inf(1), math.Inf(1)}
 		if !reflect.DeepEqual(result, expected) {
 			t.Errorf("computeDistancesToCenters(%v, nil) = %v, want %v", data, result, expected)
@@ -793,7 +793,7 @@ func TestComputeDistancesToCenters_EdgeCases(t *testing.T) {
 			{10.0, 10.0}, // distance = 50
 			{5.0, 5.0},   // distance = 0 (closest)
 		}
-		result := computeDistancesToCenters(data, centers)
+		result := computeDistancesToCenters(data, centers, make([]float64, len(data)))
 		expected := []float64{0.0}
 		if !reflect.DeepEqual(result, expected) {
 			t.Errorf("computeDistancesToCenters() = %v, want %v", result, expected)
@@ -809,7 +809,7 @@ func TestComputeDistancesToCenters_EdgeCases(t *testing.T) {
 			{0.0, 0.0, 0.0, 0.0, 0.0},
 			{5.0, 5.0, 5.0, 5.0, 5.0},
 		}
-		result := computeDistancesToCenters(data, centers)
+		result := computeDistancesToCenters(data, centers, make([]float64, len(data)))
 		// Point 1: distance to center1 = 1²+2²+3²+4²+5² = 55, distance to center2 = 4²+3²+2²+1²+0² = 30 (closer)
 		// Point 2: distance to center1 = 6²+7²+8²+9²+10² = 330, distance to center2 = 1²+2²+3²+4²+5² = 55 (closer)
 		expected := []float64{30.0, 55.0}
@@ -828,8 +828,8 @@ func TestComputeDistancesToCenters_Properties(t *testing.T) {
 		centers1 := [][]float64{{0.0, 0.0}, {10.0, 10.0}}
 		centers2 := [][]float64{{1.0, 1.0}, {9.0, 9.0}} // Centers exactly at data points
 
-		distances1 := computeDistancesToCenters(data, centers1)
-		distances2 := computeDistancesToCenters(data, centers2)
+		distances1 := computeDistancesToCenters(data, centers1, make([]float64, len(data)))
+		distances2 := computeDistancesToCenters(data, centers2, make([]float64, len(data)))
 
 		// Moving centers to data points should reduce distances to zero
 		for i := range distances2 {
@@ -847,7 +847,7 @@ func TestComputeDistancesToCenters_Properties(t *testing.T) {
 		data := [][]float64{{1.0, 1.0}, {9.0, 9.0}}
 		centers := [][]float64{{0.0, 0.0}, {10.0, 10.0}}
 
-		distances := computeDistancesToCenters(data, centers)
+		distances := computeDistancesToCenters(data, centers, make([]float64, len(data)))
 		inertia := calculateInertia(data, centers)
 
 		// Sum of distances should equal inertia
@@ -865,7 +865,7 @@ func TestComputeDistancesToCenters_Properties(t *testing.T) {
 		data := [][]float64{{1.0, 2.0}, {3.0, 4.0}, {5.0, 6.0}}
 		centers := [][]float64{{0.0, 0.0}, {10.0, 10.0}}
 
-		distances := computeDistancesToCenters(data, centers)
+		distances := computeDistancesToCenters(data, centers, make([]float64, len(data)))
 
 		for i, dist := range distances {
 			if dist < 0 {
@@ -1801,13 +1801,16 @@ func TestAssignPointsToClusters(t *testing.T) {
 					t.Errorf("unexpected panic: %v", recoverVal)
 				}
 			}()
+
+			l := make([]int, len(tt.data))
+
 			if !tt.wantPanic {
-				got := assignPointsToClusters(tt.data, tt.centers)
+				got := assignPointsToClusters(tt.data, tt.centers, l)
 				if !reflect.DeepEqual(got, tt.want) {
 					t.Errorf("assignPointsToClusters(%v, %v) = %v; want %v", tt.data, tt.centers, got, tt.want)
 				}
 			} else {
-				_ = assignPointsToClusters(tt.data, tt.centers)
+				_ = assignPointsToClusters(tt.data, tt.centers, l)
 			}
 		})
 	}
@@ -2651,13 +2654,13 @@ func BenchmarkLloyd_VaryingDataSize(b *testing.B) {
 		}
 
 		b.Run(fmt.Sprintf("size_%d", size), func(b *testing.B) {
+			kmeans := NewWithOptions(5,
+				WithAlgorithm(AlgorithmLloyd),
+				WithInitMethod(InitKMeansPlusPlus),
+				WithMaxIter(50),
+			)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				kmeans := NewWithOptions(5,
-					WithAlgorithm(AlgorithmLloyd),
-					WithInitMethod(InitKMeansPlusPlus),
-					WithMaxIter(50),
-				)
 				_, _ = kmeans.Cluster(data)
 			}
 		})
