@@ -2106,6 +2106,36 @@ func TestCluster_Lloyd_Convergence(t *testing.T) {
 	require.True(t, math.Abs(centroid0X-centroid1X) > 4, "centroids should be in different regions")
 }
 
+func TestCluster_Lloyd_IteratesUntilConvergence(t *testing.T) {
+	data := make([][]float64, 500)
+	for i := range data {
+		if i < 250 {
+			data[i] = []float64{float64(i % 10), float64(i % 10)}
+		} else {
+			data[i] = []float64{float64(i%10) + 50, float64(i%10) + 50}
+		}
+	}
+
+	run := func(maxIter int) *Result {
+		kmeans := NewWithOptions(5,
+			WithInitMethod(InitRandom),
+			WithRandomSeed(7),
+			WithNInit(1),
+			WithMaxIter(maxIter),
+			WithTol(1e-4),
+		)
+		result, err := kmeans.Cluster(data)
+		require.NoError(t, err)
+		return result
+	}
+
+	oneIter := run(1)
+	manyIter := run(300)
+
+	require.Less(t, manyIter.Inertia, oneIter.Inertia,
+		"Lloyd should keep refining centroids across iterations until convergence")
+}
+
 func TestCluster_Lloyd_MaxIterLimit(t *testing.T) {
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),

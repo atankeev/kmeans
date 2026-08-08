@@ -420,11 +420,12 @@ func (k *Kmeans) lloydKMeans(data [][]float64) *Result {
 		// This computes the mean of all points assigned to each cluster.
 		newCenters := k.updateCentersLloyd(data, labels)
 
+		// Check for convergence against the previous centers before replacing them
+		converged := checkConvergence(centers, newCenters, k.Tol)
+
 		// Update centers and labels
 		centers = newCenters
 
-		// Check for convergence
-		converged := checkConvergence(centers, newCenters, k.Tol)
 		if converged {
 			break
 		}
