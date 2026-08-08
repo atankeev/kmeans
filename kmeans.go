@@ -201,17 +201,22 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 		return nil, fmt.Errorf("invalid data: %w", err)
 	}
 
+	labels := make([]int, len(data))
 	var (
 		bestResult *Result
+		bestLabels []int
 	)
 
 	// Run the clustering algorithm multiple times and return the best result
 	for range k.NInit {
-		result := k.clusterSingle(data)
+		result := k.lloydKMeans(data, labels)
 		if bestResult == nil || result.Inertia < bestResult.Inertia {
 			bestResult = result
+			bestLabels = append(bestLabels[:0], labels...)
 		}
 	}
+
+	bestResult.Labels = bestLabels
 
 	return bestResult, nil
 }
@@ -390,7 +395,8 @@ func (k *Kmeans) initCentroids(data [][]float64) [][]float64 {
 //
 //	A pointer to Result containing final centroids, labels, and inertia.
 func (k *Kmeans) clusterSingle(data [][]float64) *Result {
-	return k.lloydKMeans(data)
+	labels := make([]int, len(data))
+	return k.lloydKMeans(data, labels)
 }
 
 // lloydKMeans performs K-means clustering using Lloyd's algorithm.
@@ -407,10 +413,12 @@ func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 // Returns:
 //
 //	A pointer to Result containing final centroids, labels, and inertia.
-func (k *Kmeans) lloydKMeans(data [][]float64) *Result {
+func (k *Kmeans) lloydKMeans(data [][]float64, labels []int) *Result {
 	centers := k.initCentroids(data)
 
-	labels := make([]int, len(data))
+	dim := len(data[0])
+	next := newCenterBuffer(k.NClusters, dim)
+	counts := make([]int, k.NClusters)
 
 	for range k.MaxIter {
 		// Step 1: Assign each data point to the nearest cluster center
@@ -418,13 +426,15 @@ func (k *Kmeans) lloydKMeans(data [][]float64) *Result {
 
 		// Step 2: Update cluster centers based on current assignments (Lloyd's update step)
 		// This computes the mean of all points assigned to each cluster.
-		newCenters := k.updateCentersLloyd(data, labels)
+		clearCenters(next)
+		clear(counts)
+		k.updateCentersLloydInto(next, counts, data, labels)
 
 		// Check for convergence against the previous centers before replacing them
-		converged := checkConvergence(centers, newCenters, k.Tol)
+		converged := checkConvergence(centers, next, k.Tol)
 
-		// Update centers and labels
-		centers = newCenters
+		// Swap buffers: the just-computed centers become the current ones for the next iteration
+		centers, next = next, centers
 
 		if converged {
 			break
@@ -458,30 +468,53 @@ func (k *Kmeans) lloydKMeans(data [][]float64) *Result {
 //	A slice of new cluster centers, where each center is a slice of float64.
 func (k *Kmeans) updateCentersLloyd(data [][]float64, labels []int) [][]float64 {
 	dim := len(data[0])
-	newCenters := make([][]float64, k.NClusters)
-	clusterSizes := make([]int, k.NClusters)
+	newCenters := newCenterBuffer(k.NClusters, dim)
 
-	for i := 0; i < k.NClusters; i++ {
-		newCenters[i] = make([]float64, dim)
-	}
+	k.updateCentersLloydInto(newCenters, make([]int, k.NClusters), data, labels)
+
+	return newCenters
+}
+
+// updateCentersLloydInto computes new cluster centers (centroids) into the provided dst buffer
+// for the Lloyd's algorithm step. dst must have k.NClusters rows of len(data[0]) columns and
+// must be zeroed before the call, as must be counts. For each cluster, it calculates the mean of
+// all points assigned to that cluster. If a cluster has no assigned points, its center remains a
+// zero vector.
+func (k *Kmeans) updateCentersLloydInto(dst [][]float64, counts []int, data [][]float64, labels []int) {
+	dim := len(data[0])
 
 	for i, point := range data {
 		cluster := labels[i]
 		for d := range dim {
-			newCenters[cluster][d] += point[d]
+			dst[cluster][d] += point[d]
 		}
-		clusterSizes[cluster]++
+		counts[cluster]++
 	}
 
 	for i := 0; i < k.NClusters; i++ {
-		if clusterSizes[i] > 0 {
+		if counts[i] > 0 {
 			for d := range dim {
-				newCenters[i][d] /= float64(clusterSizes[i])
+				dst[i][d] /= float64(counts[i])
 			}
 		}
 	}
+}
 
-	return newCenters
+// newCenterBuffer allocates a flat-backed buffer with nClusters rows of dim columns.
+func newCenterBuffer(nClusters, dim int) [][]float64 {
+	buf := make([][]float64, nClusters)
+	backing := make([]float64, nClusters*dim)
+	for i := 0; i < nClusters; i++ {
+		buf[i] = backing[i*dim : (i+1)*dim]
+	}
+	return buf
+}
+
+// clearCenters zeroes all values in the buffer.
+func clearCenters(buf [][]float64) {
+	for _, center := range buf {
+		clear(center)
+	}
 }
 
 // assignPointsToClusters assigns each data point to the nearest cluster center.
