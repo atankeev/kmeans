@@ -31,39 +31,6 @@ const (
 	InitRandom         InitMethod = "random"
 )
 
-// Algorithm defines the clustering algorithm to use
-type Algorithm string
-
-const (
-	AlgorithmLloyd = "lloyd"
-	AlgorithmElkan = "elkan"
-)
-
-var (
-	supportedAlgorithms = map[Algorithm]struct{}{
-		AlgorithmLloyd: {},
-		AlgorithmElkan: {},
-	}
-)
-
-// elkanState хранит состояние алгоритма Elkan для каждой точки
-type elkanState struct {
-	// upperBounds[i] - верхняя граница расстояния от точки i до её текущего центра
-	upperBounds []float64
-	// lowerBounds - нижняя граница расстояния от точки i до центра j (flat: i*k + j)
-	lowerBounds []float64
-	// assignments[i] - текущий кластер точки i
-	assignments []int
-	// centerDistances - расстояние между центрами i и j (flat: i*k + j)
-	centerDistances []float64
-	// centerMovement[i] - расстояние, на которое переместился центр i
-	centerMovement []float64
-	// n - количество точек (для вычисления индексов)
-	n int
-	// k - количество кластеров (для вычисления индексов)
-	k int
-}
-
 // Result represents the result of K-means clustering
 type Result struct {
 	// Cluster labels for each data point
@@ -100,9 +67,6 @@ type Kmeans struct {
 	// Number of trials for k-means++ initialization
 	NCentroidsInitTrials int
 
-	// Algorithm to use for clustering
-	Algorithm Algorithm
-
 	// Internal fields for validation
 	initialized bool
 }
@@ -119,7 +83,6 @@ func New(nClusters int) *Kmeans {
 		Tol:                  DefaultTol,
 		Init:                 InitKMeansPlusPlus,
 		NCentroidsInitTrials: int(2 + math.Log(float64(nClusters))),
-		Algorithm:            AlgorithmLloyd,
 		RandomState:          rand.New(rand.NewSource(time.Now().UnixNano())),
 		initialized:          true,
 	}
@@ -193,13 +156,6 @@ func WithNCentroidsInitTrials(n int) Option {
 	}
 }
 
-// WithAlgorithm sets the algorithm to use for clustering
-func WithAlgorithm(algorithm Algorithm) Option {
-	return func(k *Kmeans) {
-		k.Algorithm = algorithm
-	}
-}
-
 // Validate checks if the Kmeans configuration is valid
 func (k *Kmeans) Validate() error {
 	if !k.initialized {
@@ -228,10 +184,6 @@ func (k *Kmeans) Validate() error {
 
 	if k.RandomState == nil {
 		return ErrInvalidRandomState
-	}
-
-	if _, ok := supportedAlgorithms[k.Algorithm]; !ok {
-		return ErrInvalidAlgorithm
 	}
 
 	return nil
@@ -425,9 +377,9 @@ func (k *Kmeans) initCentroids(data [][]float64) [][]float64 {
 	return centers
 }
 
-// clusterSingle performs K-means clustering using the selected algorithm.
+// clusterSingle performs K-means clustering using Lloyd's algorithm.
 //
-// This function performs the main loop of the selected algorithm, which iteratively assigns
+// This function performs the main loop of the algorithm, which iteratively assigns
 // each data point to the nearest cluster center, updates the centers, and checks for convergence.
 //
 // Parameters:
@@ -438,14 +390,7 @@ func (k *Kmeans) initCentroids(data [][]float64) [][]float64 {
 //
 //	A pointer to Result containing final centroids, labels, and inertia.
 func (k *Kmeans) clusterSingle(data [][]float64) *Result {
-	switch k.Algorithm {
-	case AlgorithmLloyd:
-		return k.lloydKMeans(data)
-	case AlgorithmElkan:
-		return k.elkanKMeans(data)
-	default:
-		return k.lloydKMeans(data)
-	}
+	return k.lloydKMeans(data)
 }
 
 // lloydKMeans performs K-means clustering using Lloyd's algorithm.
@@ -538,294 +483,6 @@ func (k *Kmeans) updateCentersLloyd(data [][]float64, labels []int) [][]float64 
 	return newCenters
 }
 
-// elkanKMeans implements the Elkan k-means algorithm.
-//
-// This function performs the main loop of the Elkan algorithm, which iteratively assigns
-// each data point to the nearest cluster center, updates the centers, and checks for convergence.
-//
-// Parameters:
-//
-//	data: The dataset, where each element is a point (slice of float64).
-//
-// Returns:
-//
-//	A pointer to Result containing final centroids, labels, and inertia.
-func (k *Kmeans) elkanKMeans(data [][]float64) *Result {
-	centers := k.initCentroids(data)
-
-	// Initialize the Elkan state
-	state := initializeElkanState(data, centers)
-
-	iteration := 0
-
-	// Main loop of the Elkan algorithm
-	for iteration < k.MaxIter {
-		// Assignment step with Elkan optimizations
-		changed := elkanAssignStep(data, centers, state)
-
-		if !changed && iteration > 0 {
-			// Convergence reached: points don't change clusters
-			break
-		}
-
-		// Save the old centers
-		oldCenters := make([][]float64, len(centers))
-		for i, center := range centers {
-			oldCenters[i] = make([]float64, len(center))
-			copy(oldCenters[i], center)
-		}
-
-		// Update the centers
-		newCenters := k.updateCentersElkan(data, state)
-		centers = newCenters
-
-		// Update the Elkan state
-		updateElkanState(oldCenters, newCenters, state)
-
-		iteration++
-
-		// Check for convergence of the centers
-		converged := checkConvergence(oldCenters, newCenters, k.Tol)
-		if converged {
-			// Convergence reached: the centers have stabilized
-			break
-		}
-	}
-
-	finalInertia := calculateInertiaByLabels(data, centers, state.assignments)
-
-	return &Result{
-		Centroids: centers,
-		Labels:    state.assignments,
-		Inertia:   finalInertia,
-	}
-}
-
-// updateCentersElkan recalculates the centers and tracks their movement.
-//
-// This function calculates the mean of all points assigned to each cluster and updates the centers.
-//
-// Parameters:
-//
-//	data:   The dataset, where each element is a point (slice of float64).
-//	state:  The current Elkan state, containing bounds and assignments for each point.
-//
-// Returns:
-//
-//	A slice of new cluster centers, where each center is a slice of float64.
-func (k *Kmeans) updateCentersElkan(data [][]float64, state *elkanState) [][]float64 {
-	dim := len(data[0])
-	newCenters := make([][]float64, k.NClusters)
-	clusterSizes := make([]int, k.NClusters)
-
-	// Initialize centers to zero
-	for i := range k.NClusters {
-		newCenters[i] = make([]float64, dim)
-	}
-
-	// Sum the coordinates of the points for each cluster
-	for i, point := range data {
-		cluster := state.assignments[i]
-		for d := range dim {
-			newCenters[cluster][d] += point[d]
-		}
-		clusterSizes[cluster]++
-	}
-
-	// Calculate the mean values
-	for i := range k.NClusters {
-		if clusterSizes[i] > 0 {
-			for d := range dim {
-				newCenters[i][d] /= float64(clusterSizes[i])
-			}
-		}
-	}
-
-	return newCenters
-}
-
-// updateElkanState updates the state of the Elkan algorithm after the centers have moved.
-//
-// This function calculates the distances the centers moved and updates the distances between centers.
-// It also updates the upper and lower bounds for each point.
-//
-// Parameters:
-//
-//	oldCenters: The old cluster centers, where each center is a slice of float64.
-//	newCenters: The new cluster centers, where each center is a slice of float64.
-//	state:      The current Elkan state, containing bounds and assignments for each point.
-func updateElkanState(oldCenters, newCenters [][]float64, state *elkanState) {
-	k := state.k
-
-	// Calculate the distances the centers moved
-	for i := range k {
-		state.centerMovement[i] = euclideanDistance(oldCenters[i], newCenters[i])
-	}
-
-	// Update the distances between centers
-	for i := range k {
-		for j := i + 1; j < k; j++ {
-			dist := euclideanDistance(newCenters[i], newCenters[j])
-			state.centerDistances[i*k+j] = dist
-			state.centerDistances[j*k+i] = dist
-		}
-	}
-
-	// Update the bounds for each point
-	n := state.n
-	for i := range n {
-		// Update the upper bound
-		currentCenter := state.assignments[i]
-		state.upperBounds[i] += state.centerMovement[currentCenter]
-
-		// Update the lower bounds
-		for j := range k {
-			idx := i*k + j
-			state.lowerBounds[idx] = math.Max(0, state.lowerBounds[idx]-state.centerMovement[j])
-		}
-	}
-}
-
-// elkanAssignStep performs the assignment step of the Elkan k-means algorithm with optimizations.
-//
-// For each data point, this function uses upper and lower bounds, as well as the triangle inequality,
-// to avoid unnecessary distance calculations and efficiently determine the nearest cluster center.
-//
-// Parameters:
-//
-//	data:    The dataset, where each element is a point (slice of float64).
-//	centers: The current cluster centers, where each center is a slice of float64.
-//	state:   The current Elkan state, containing bounds and assignments for each point.
-//
-// Returns:
-//
-//	true if any point changed its cluster assignment during this step; false otherwise.
-func elkanAssignStep(data [][]float64, centers [][]float64, state *elkanState) bool {
-	k := state.k
-	changed := false
-
-	for i, point := range data {
-		currentCenter := state.assignments[i]
-
-		// Optimization 1: If the upper bound is less than or equal to half of the minimum distance between centers,
-		// the point will definitely stay in the current cluster
-		minCenterDistance := math.Inf(1)
-		for j := range k {
-			if j == currentCenter {
-				continue
-			}
-
-			cd := state.centerDistances[currentCenter*k+j]
-			if cd < minCenterDistance {
-				minCenterDistance = cd
-			}
-		}
-
-		if state.upperBounds[i] <= minCenterDistance/2 {
-			continue
-		}
-
-		// Recalculate the exact distance to the current center
-		actualDistance := euclideanDistance(point, centers[currentCenter])
-		state.upperBounds[i] = actualDistance
-		state.lowerBounds[i*k+currentCenter] = actualDistance
-
-		// Find the best center
-		bestCenter := currentCenter
-		bestDistance := actualDistance
-
-		for j := range k {
-			if j == currentCenter {
-				continue
-			}
-
-			lbIdx := i*k + j
-			cdIdx := currentCenter*k + j
-
-			// Optimization 2: Use the triangle inequality
-			if state.upperBounds[i] > state.lowerBounds[lbIdx] &&
-				state.upperBounds[i] > state.centerDistances[cdIdx]/2 {
-
-				// Calculate the exact distance only if the optimizations didn't work
-				distance := euclideanDistance(point, centers[j])
-				state.lowerBounds[lbIdx] = distance
-
-				if distance < bestDistance {
-					bestDistance = distance
-					bestCenter = j
-				}
-			}
-		}
-
-		// Update the assignment if we found the best center
-		if bestCenter != currentCenter {
-			state.assignments[i] = bestCenter
-			state.upperBounds[i] = bestDistance
-			changed = true
-		}
-	}
-
-	return changed
-}
-
-// initializeElkanState initializes the state required for the Elkan variant of the k-means algorithm.
-//
-// This function prepares upper and lower bounds, assignments, and center distances for each data point
-// and cluster center, which are used to accelerate the assignment step in Elkan's algorithm.
-//
-// Parameters:
-//
-//	data:    The dataset, where each element is a point (slice of float64).
-//	centers: The initial cluster centers, where each center is a slice of float64.
-//
-// Returns:
-//
-//	A pointer to an elkanState struct containing all necessary bounds and assignments for the algorithm.
-func initializeElkanState(data [][]float64, centers [][]float64) *elkanState {
-	n := len(data)
-	k := len(centers)
-
-	state := &elkanState{
-		upperBounds:     make([]float64, n),
-		lowerBounds:     make([]float64, n*k),
-		assignments:     make([]int, n),
-		centerDistances: make([]float64, k*k),
-		centerMovement:  make([]float64, k),
-		n:               n,
-		k:               k,
-	}
-
-	// Calculate initial distances between centers
-	for i := range k {
-		for j := i + 1; j < k; j++ {
-			dist := euclideanDistance(centers[i], centers[j])
-			state.centerDistances[i*k+j] = dist
-			state.centerDistances[j*k+i] = dist
-		}
-	}
-
-	// Initialize bounds for each point
-	for i, point := range data {
-		minDist := math.Inf(1)
-		bestCenter := 0
-
-		for j, center := range centers {
-			dist := euclideanDistance(point, center)
-			state.lowerBounds[i*k+j] = dist
-
-			if dist < minDist {
-				minDist = dist
-				bestCenter = j
-			}
-		}
-
-		state.upperBounds[i] = minDist
-		state.assignments[i] = bestCenter
-	}
-
-	return state
-}
-
 // assignPointsToClusters assigns each data point to the nearest cluster center.
 //
 // For each point in the dataset, this function computes the squared Euclidean distance
@@ -873,44 +530,6 @@ func squaredEuclideanDistance(p1, p2 []float64) float64 {
 
 	return sum
 }
-
-//func squaredEuclideanDistance(p1, p2 []float64) float64 {
-//	switch len(p1) {
-//	case 2:
-//		d0 := p1[0] - p2[0]
-//		d1 := p1[1] - p2[1]
-//		return d0*d0 + d1*d1
-//	case 3:
-//		d0 := p1[0] - p2[0]
-//		d1 := p1[1] - p2[1]
-//		d2 := p1[2] - p2[2]
-//		return d0*d0 + d1*d1 + d2*d2
-//	default:
-//		sum0, sum1, sum2, sum3 := 0.0, 0.0, 0.0, 0.0
-//		n := len(p1)
-//		i := 0
-//
-//		// Развёртка цикла по 4 элемента
-//		for ; i <= n-4; i += 4 {
-//			d0 := p1[i] - p2[i]
-//			d1 := p1[i+1] - p2[i+1]
-//			d2 := p1[i+2] - p2[i+2]
-//			d3 := p1[i+3] - p2[i+3]
-//			sum0 += d0 * d0
-//			sum1 += d1 * d1
-//			sum2 += d2 * d2
-//			sum3 += d3 * d3
-//		}
-//
-//		// Остаток
-//		for ; i < n; i++ {
-//			d := p1[i] - p2[i]
-//			sum0 += d * d
-//		}
-//
-//		return sum0 + sum1 + sum2 + sum3
-//	}
-//}
 
 // calculateInertia calculates the total inertia (within-cluster sum of squares) for the given data points and cluster centers.
 // Inertia is the sum of squared distances from each data point to its nearest cluster center.
@@ -1055,18 +674,4 @@ func checkConvergence(oldCenters, newCenters [][]float64, tolerance float64) boo
 	}
 
 	return true
-}
-
-// euclideanDistance computes the Euclidean distance between two points represented as slices of float64.
-//
-// Parameters:
-//
-//	p1: The first point, a slice of float64.
-//	p2: The second point, a slice of float64.
-//
-// Returns:
-//
-//	The Euclidean distance between p1 and p2.
-func euclideanDistance(p1, p2 []float64) float64 {
-	return math.Sqrt(squaredEuclideanDistance(p1, p2))
 }

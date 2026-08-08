@@ -1921,81 +1921,6 @@ func TestCalculateInertiaByLabels(t *testing.T) {
 	}
 }
 
-// Unit tests for euclideanDistance
-func TestEuclideanDistance(t *testing.T) {
-	tests := []struct {
-		name      string
-		p1, p2    []float64
-		want      float64
-		wantPanic bool
-	}{
-		{
-			name: "Zero distance (identical points)",
-			p1:   []float64{0, 0},
-			p2:   []float64{0, 0},
-			want: 0,
-		},
-		{
-			name: "Unit distance (1D)",
-			p1:   []float64{0},
-			p2:   []float64{1},
-			want: 1,
-		},
-		{
-			name: "Unit distance (2D)",
-			p1:   []float64{0, 0},
-			p2:   []float64{1, 0},
-			want: 1,
-		},
-		{
-			name: "Diagonal (2D)",
-			p1:   []float64{0, 0},
-			p2:   []float64{3, 4},
-			want: 5,
-		},
-		{
-			name: "Negative values",
-			p1:   []float64{-1, -2},
-			p2:   []float64{2, 2},
-			want: 5,
-		},
-		{
-			name: "Empty points",
-			p1:   []float64{},
-			p2:   []float64{},
-			want: 0,
-		},
-		{
-			name:      "Different dimensions (should panic)",
-			p1:        []float64{1, 2},
-			p2:        []float64{1},
-			wantPanic: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				recoverVal := recover()
-				if tt.wantPanic && recoverVal == nil {
-					t.Errorf("expected panic, but did not panic")
-				}
-				if !tt.wantPanic && recoverVal != nil {
-					t.Errorf("unexpected panic: %v", recoverVal)
-				}
-			}()
-			if !tt.wantPanic {
-				got := euclideanDistance(tt.p1, tt.p2)
-				if math.Abs(got-tt.want) > 1e-9 {
-					t.Errorf("euclideanDistance(%v, %v) = %v; want %v", tt.p1, tt.p2, got, tt.want)
-				}
-			} else {
-				_ = euclideanDistance(tt.p1, tt.p2)
-			}
-		})
-	}
-}
-
 // Unit tests for updateCentersLloyd
 func TestUpdateCentersLloyd(t *testing.T) {
 	k := &Kmeans{NClusters: 2}
@@ -2073,67 +1998,8 @@ func TestUpdateCentersLloyd(t *testing.T) {
 	}
 }
 
-// Unit tests for initializeElkanState
-func TestInitializeElkanState(t *testing.T) {
-	tests := []struct {
-		name            string
-		data            [][]float64
-		centers         [][]float64
-		wantAssignments []int
-		wantUpperBounds []float64
-		wantLowerBounds [][]float64
-	}{
-		{
-			name:            "Simple 2 points, 2 centers",
-			data:            [][]float64{{0, 0}, {1, 1}},
-			centers:         [][]float64{{0, 0}, {2, 2}},
-			wantAssignments: []int{0, 0},
-			wantUpperBounds: []float64{0, math.Sqrt(2)},
-			wantLowerBounds: [][]float64{{0, math.Sqrt(8)}, {math.Sqrt(2), math.Sqrt(2)}},
-		},
-		{
-			name:            "Each point closer to its own center",
-			data:            [][]float64{{0, 0}, {2, 2}},
-			centers:         [][]float64{{0, 0}, {2, 2}},
-			wantAssignments: []int{0, 1},
-			wantUpperBounds: []float64{0, 0},
-			wantLowerBounds: [][]float64{{0, math.Sqrt(8)}, {math.Sqrt(8), 0}},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			k := len(tt.centers)
-			state := initializeElkanState(tt.data, tt.centers)
-			if !reflect.DeepEqual(state.assignments, tt.wantAssignments) {
-				t.Errorf("assignments: got %v, want %v", state.assignments, tt.wantAssignments)
-			}
-			if len(state.upperBounds) != len(tt.wantUpperBounds) {
-				t.Errorf("upperBounds: got %v, want %v", state.upperBounds, tt.wantUpperBounds)
-			}
-			for i := range state.upperBounds {
-				if math.Abs(state.upperBounds[i]-tt.wantUpperBounds[i]) > 1e-6 {
-					t.Errorf("upperBounds[%d]: got %v, want %v", i, state.upperBounds[i], tt.wantUpperBounds[i])
-				}
-			}
-			if len(state.lowerBounds) != len(tt.wantLowerBounds)*k {
-				t.Errorf("lowerBounds: got %v, want %v", state.lowerBounds, tt.wantLowerBounds)
-			}
-			for i := range tt.wantLowerBounds {
-				for j := range tt.wantLowerBounds[i] {
-					idx := i*k + j
-					if math.Abs(state.lowerBounds[idx]-tt.wantLowerBounds[i][j]) > 1e-6 {
-						t.Errorf("lowerBounds[%d][%d]: got %v, want %v", i, j, state.lowerBounds[idx], tt.wantLowerBounds[i][j])
-					}
-				}
-			}
-		})
-	}
-}
-
 func TestCluster_Lloyd_Basic(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 		WithMaxIter(100),
@@ -2160,7 +2026,6 @@ func TestCluster_Lloyd_Basic(t *testing.T) {
 
 func TestCluster_Lloyd_KMeansPlusPlusInit(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(123),
 	)
@@ -2193,7 +2058,6 @@ func TestCluster_Lloyd_KMeansPlusPlusInit(t *testing.T) {
 
 func TestCluster_Lloyd_RandomInit(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitRandom),
 		WithRandomSeed(456),
 	)
@@ -2215,7 +2079,6 @@ func TestCluster_Lloyd_RandomInit(t *testing.T) {
 
 func TestCluster_Lloyd_Convergence(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 		WithMaxIter(300),
@@ -2245,7 +2108,6 @@ func TestCluster_Lloyd_Convergence(t *testing.T) {
 
 func TestCluster_Lloyd_MaxIterLimit(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 		WithMaxIter(1),
@@ -2269,7 +2131,6 @@ func TestCluster_Lloyd_MaxIterLimit(t *testing.T) {
 
 func TestCluster_Lloyd_MultipleNInit(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitRandom),
 		WithRandomSeed(42),
 		WithNInit(5),
@@ -2303,7 +2164,6 @@ func TestCluster_Lloyd_DifferentTol(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			kmeans := NewWithOptions(2,
-				WithAlgorithm(AlgorithmLloyd),
 				WithInitMethod(InitKMeansPlusPlus),
 				WithRandomSeed(42),
 				WithTol(tt.tol),
@@ -2328,7 +2188,6 @@ func TestCluster_Lloyd_DifferentTol(t *testing.T) {
 
 func TestCluster_Lloyd_SingleDimension(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 	)
@@ -2354,7 +2213,6 @@ func TestCluster_Lloyd_SingleDimension(t *testing.T) {
 
 func TestCluster_Lloyd_LargeNumbers(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 	)
@@ -2377,7 +2235,6 @@ func TestCluster_Lloyd_LargeNumbers(t *testing.T) {
 
 func TestCluster_Lloyd_SmallNumbers(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 	)
@@ -2400,7 +2257,6 @@ func TestCluster_Lloyd_SmallNumbers(t *testing.T) {
 
 func TestCluster_Lloyd_NaNValues(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 	)
@@ -2421,7 +2277,6 @@ func TestCluster_Lloyd_NaNValues(t *testing.T) {
 
 func TestCluster_Lloyd_InfValues(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 	)
@@ -2441,7 +2296,6 @@ func TestCluster_Lloyd_InfValues(t *testing.T) {
 
 func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
 	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 	)
@@ -2462,7 +2316,6 @@ func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
 
 func TestCluster_Lloyd_LinearData(t *testing.T) {
 	kmeans := NewWithOptions(3,
-		WithAlgorithm(AlgorithmLloyd),
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
 	)
@@ -2543,26 +2396,6 @@ func TestInitCentroids_DefaultFallback(t *testing.T) {
 	require.Len(t, centroids, 2)
 }
 
-func TestClusterSingle_LloydAlgorithm(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmLloyd),
-		WithRandomSeed(42),
-	)
-
-	data := [][]float64{
-		{1.0, 2.0},
-		{1.5, 1.8},
-		{5.0, 8.0},
-		{8.0, 8.0},
-	}
-
-	result := kmeans.clusterSingle(data)
-
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 4)
-	require.Positive(t, result.Inertia)
-}
-
 func TestClusterSingle_DefaultAlgorithm(t *testing.T) {
 	kmeans := NewWithOptions(2, WithRandomSeed(42))
 
@@ -2578,26 +2411,6 @@ func TestClusterSingle_DefaultAlgorithm(t *testing.T) {
 	require.Len(t, result.Centroids, 2)
 }
 
-func TestClusterSingle_ElkanAlgorithm(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithRandomSeed(42),
-	)
-
-	data := [][]float64{
-		{1.0, 2.0},
-		{1.5, 1.8},
-		{5.0, 8.0},
-		{8.0, 8.0},
-	}
-
-	result := kmeans.clusterSingle(data)
-
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 4)
-	require.Positive(t, result.Inertia)
-}
-
 func BenchmarkLloyd_KMeansPlusPlus(b *testing.B) {
 	data := make([][]float64, 1000)
 	for i := 0; i < 1000; i++ {
@@ -2611,7 +2424,6 @@ func BenchmarkLloyd_KMeansPlusPlus(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		kmeans := NewWithOptions(5,
-			WithAlgorithm(AlgorithmLloyd),
 			WithInitMethod(InitKMeansPlusPlus),
 			WithMaxIter(100),
 		)
@@ -2632,7 +2444,6 @@ func BenchmarkLloyd_RandomInit(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		kmeans := NewWithOptions(5,
-			WithAlgorithm(AlgorithmLloyd),
 			WithInitMethod(InitRandom),
 			WithMaxIter(100),
 		)
@@ -2655,7 +2466,6 @@ func BenchmarkLloyd_VaryingDataSize(b *testing.B) {
 
 		b.Run(fmt.Sprintf("size_%d", size), func(b *testing.B) {
 			kmeans := NewWithOptions(5,
-				WithAlgorithm(AlgorithmLloyd),
 				WithInitMethod(InitKMeansPlusPlus),
 				WithMaxIter(50),
 			)
@@ -2665,539 +2475,6 @@ func BenchmarkLloyd_VaryingDataSize(b *testing.B) {
 			}
 		})
 	}
-}
-
-func TestCluster_Elkan_Basic(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-		WithMaxIter(100),
-		WithTol(1e-4),
-	)
-
-	data := [][]float64{
-		{1.0, 2.0},
-		{1.5, 1.8},
-		{5.0, 8.0},
-		{8.0, 8.0},
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 4)
-	require.Positive(t, result.Inertia)
-
-	require.Equal(t, result.Labels[0], result.Labels[1])
-	require.Equal(t, result.Labels[2], result.Labels[3])
-}
-
-func TestCluster_Elkan_KMeansPlusPlusInit(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(123),
-	)
-
-	data := [][]float64{
-		{0.0, 0.0},
-		{0.0, 1.0},
-		{10.0, 10.0},
-		{10.0, 11.0},
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 4)
-
-	cluster0Count := 0
-	cluster1Count := 0
-	for _, label := range result.Labels {
-		if label == 0 {
-			cluster0Count++
-		} else {
-			cluster1Count++
-		}
-	}
-	require.Equal(t, 2, cluster0Count)
-	require.Equal(t, 2, cluster1Count)
-}
-
-func TestCluster_Elkan_RandomInit(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitRandom),
-		WithRandomSeed(456),
-	)
-
-	data := [][]float64{
-		{1.0, 1.0},
-		{2.0, 2.0},
-		{9.0, 9.0},
-		{10.0, 10.0},
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 4)
-	require.Positive(t, result.Inertia)
-}
-
-func TestCluster_Elkan_Convergence(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-		WithMaxIter(300),
-		WithTol(1e-6),
-	)
-
-	data := [][]float64{
-		{1.0, 2.0},
-		{1.1, 2.1},
-		{1.2, 2.2},
-		{10.0, 10.0},
-		{10.1, 10.1},
-		{10.2, 10.2},
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Positive(t, result.Inertia)
-
-	require.Len(t, result.Centroids, 2)
-	centroid0X := result.Centroids[0][0]
-	centroid1X := result.Centroids[1][0]
-
-	require.True(t, math.Abs(centroid0X-centroid1X) > 4, "centroids should be in different regions")
-}
-
-func TestCluster_Elkan_MaxIterLimit(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-		WithMaxIter(1),
-		WithTol(1e-10),
-	)
-
-	data := [][]float64{
-		{1.0, 2.0},
-		{1.5, 1.8},
-		{5.0, 8.0},
-		{8.0, 8.0},
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 4)
-	require.Positive(t, result.Inertia)
-}
-
-func TestCluster_Elkan_MultipleNInit(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitRandom),
-		WithRandomSeed(42),
-		WithNInit(5),
-		WithMaxIter(50),
-	)
-
-	data := [][]float64{
-		{1.0, 2.0},
-		{1.5, 1.8},
-		{5.0, 8.0},
-		{8.0, 8.0},
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.Positive(t, result.Inertia)
-}
-
-func TestCluster_Elkan_DifferentTol(t *testing.T) {
-	tests := []struct {
-		name string
-		tol  float64
-	}{
-		{"Very precise", 1e-10},
-		{"Default precision", 1e-4},
-		{"Low precision", 1e-2},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			kmeans := NewWithOptions(2,
-				WithAlgorithm(AlgorithmElkan),
-				WithInitMethod(InitKMeansPlusPlus),
-				WithRandomSeed(42),
-				WithTol(tt.tol),
-				WithMaxIter(100),
-			)
-
-			data := [][]float64{
-				{1.0, 2.0},
-				{1.5, 1.8},
-				{5.0, 8.0},
-				{8.0, 8.0},
-			}
-
-			result, err := kmeans.Cluster(data)
-
-			require.NoError(t, err)
-			require.Len(t, result.Centroids, 2)
-			require.Positive(t, result.Inertia)
-		})
-	}
-}
-
-func TestUpdateCentersElkan_Basic(t *testing.T) {
-	k := &Kmeans{NClusters: 2}
-
-	state := &elkanState{
-		assignments: []int{0, 1, 0, 1},
-	}
-
-	data := [][]float64{
-		{1.0, 2.0},
-		{5.0, 6.0},
-		{3.0, 4.0},
-		{7.0, 8.0},
-	}
-
-	centers := k.updateCentersElkan(data, state)
-
-	require.Len(t, centers, 2)
-
-	cluster0Expected := []float64{(1.0 + 3.0) / 2, (2.0 + 4.0) / 2}
-	cluster1Expected := []float64{(5.0 + 7.0) / 2, (6.0 + 8.0) / 2}
-
-	require.True(t, reflect.DeepEqual(centers[0], cluster0Expected) || reflect.DeepEqual(centers[1], cluster0Expected))
-	require.True(t, reflect.DeepEqual(centers[0], cluster1Expected) || reflect.DeepEqual(centers[1], cluster1Expected))
-}
-
-func TestUpdateCentersElkan_EmptyCluster(t *testing.T) {
-	k := &Kmeans{NClusters: 3}
-
-	state := &elkanState{
-		assignments: []int{0, 0, 1, 1},
-	}
-
-	data := [][]float64{
-		{1.0, 2.0},
-		{2.0, 3.0},
-		{5.0, 6.0},
-		{6.0, 7.0},
-	}
-
-	centers := k.updateCentersElkan(data, state)
-
-	require.Len(t, centers, 3)
-	require.Len(t, centers[2], 2)
-	require.Equal(t, []float64{0.0, 0.0}, centers[2])
-}
-
-func TestUpdateCentersElkan_AllClustersFilled(t *testing.T) {
-	k := &Kmeans{NClusters: 2}
-
-	state := &elkanState{
-		assignments: []int{0, 1, 0, 1},
-	}
-
-	data := [][]float64{
-		{2.0, 4.0},
-		{6.0, 8.0},
-		{4.0, 6.0},
-		{8.0, 10.0},
-	}
-
-	centers := k.updateCentersElkan(data, state)
-
-	require.Len(t, centers, 2)
-	center0Avg := (centers[0][0] + centers[0][1]) / 2
-	center1Avg := (centers[1][0] + centers[1][1]) / 2
-	require.True(t, center0Avg < center1Avg, "first cluster should have smaller values")
-}
-
-func TestUpdateElkanState_Basic(t *testing.T) {
-	oldCenters := [][]float64{{1.0, 1.0}, {10.0, 10.0}}
-	newCenters := [][]float64{{2.0, 2.0}, {11.0, 11.0}}
-
-	state := &elkanState{
-		centerMovement:  make([]float64, 2),
-		centerDistances: make([]float64, 4),
-		upperBounds:     []float64{5.0, 5.0},
-		lowerBounds:     make([]float64, 4),
-		assignments:     []int{0, 1},
-		n:               2,
-		k:               2,
-	}
-
-	updateElkanState(oldCenters, newCenters, state)
-
-	require.Positive(t, state.centerMovement[0])
-	require.Positive(t, state.centerMovement[1])
-}
-
-func TestUpdateElkanState_CenterMovement(t *testing.T) {
-	oldCenters := [][]float64{{0.0, 0.0}, {100.0, 100.0}}
-	newCenters := [][]float64{{1.0, 1.0}, {99.0, 99.0}}
-
-	state := &elkanState{
-		centerMovement:  make([]float64, 2),
-		centerDistances: make([]float64, 4),
-		upperBounds:     []float64{10.0, 10.0},
-		lowerBounds:     make([]float64, 4),
-		assignments:     []int{0, 1},
-		n:               2,
-		k:               2,
-	}
-
-	updateElkanState(oldCenters, newCenters, state)
-
-	movement0 := euclideanDistance(oldCenters[0], newCenters[0])
-	movement1 := euclideanDistance(oldCenters[1], newCenters[1])
-
-	require.Equal(t, movement0, state.centerMovement[0])
-	require.Equal(t, movement1, state.centerMovement[1])
-}
-
-func TestUpdateElkanState_BoundsUpdate(t *testing.T) {
-	oldCenters := [][]float64{{1.0, 1.0}, {10.0, 10.0}}
-	newCenters := [][]float64{{2.0, 2.0}, {11.0, 11.0}}
-
-	state := &elkanState{
-		centerMovement:  make([]float64, 2),
-		centerDistances: make([]float64, 4),
-		upperBounds:     []float64{5.0, 5.0},
-		lowerBounds:     []float64{1.0, 1.0, 1.0, 1.0},
-		assignments:     []int{0, 1},
-		n:               2,
-		k:               2,
-	}
-
-	upperBefore := state.upperBounds[0]
-	lowerBefore := state.lowerBounds[1]
-
-	updateElkanState(oldCenters, newCenters, state)
-
-	require.True(t, state.upperBounds[0] >= upperBefore)
-	require.True(t, state.lowerBounds[1] <= lowerBefore)
-}
-
-func TestElkanAssignStep_Basic(t *testing.T) {
-	data := [][]float64{
-		{1.0, 1.0},
-		{2.0, 2.0},
-		{100.0, 100.0},
-		{101.0, 101.0},
-	}
-
-	centers := [][]float64{{1.5, 1.5}, {100.5, 100.5}}
-
-	state := initializeElkanState(data, centers)
-
-	elkanAssignStep(data, centers, state)
-
-	require.Len(t, state.assignments, 4)
-}
-
-func TestElkanAssignStep_NoChange(t *testing.T) {
-	data := [][]float64{
-		{1.0, 1.0},
-		{2.0, 2.0},
-	}
-
-	centers := [][]float64{{1.5, 1.5}, {100.0, 100.0}}
-
-	state := initializeElkanState(data, centers)
-	_ = elkanAssignStep(data, centers, state)
-
-	oldAssignments := make([]int, len(state.assignments))
-	copy(oldAssignments, state.assignments)
-
-	changed := elkanAssignStep(data, centers, state)
-
-	require.False(t, changed)
-}
-
-func TestElkanAssignStep_AllChange(t *testing.T) {
-	data := [][]float64{
-		{1.0, 1.0},
-		{2.0, 2.0},
-		{100.0, 100.0},
-		{101.0, 101.0},
-	}
-
-	centers := [][]float64{{50.0, 50.0}, {51.0, 51.0}}
-
-	state := initializeElkanState(data, centers)
-
-	elkanAssignStep(data, centers, state)
-
-	require.Len(t, state.assignments, 4)
-}
-
-func TestCluster_Elkan_SingleDimension(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
-
-	data := [][]float64{
-		{1.0},
-		{2.0},
-		{3.0},
-		{10.0},
-		{11.0},
-		{12.0},
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 6)
-	require.Positive(t, result.Inertia)
-	require.Len(t, result.Centroids[0], 1)
-	require.Len(t, result.Centroids[1], 1)
-}
-
-func TestCluster_Elkan_LargeNumbers(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
-
-	data := [][]float64{
-		{1e9, 1e9},
-		{1e9 + 1, 1e9 + 1},
-		{1e9 + 2, 1e9 + 2},
-		{1e10, 1e10},
-		{1e10 + 1, 1e10 + 1},
-		{1e10 + 2, 1e10 + 2},
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.Positive(t, result.Inertia)
-}
-
-func TestCluster_Elkan_LinearData(t *testing.T) {
-	kmeans := NewWithOptions(3,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
-
-	data := make([][]float64, 30)
-	for i := 0; i < 30; i++ {
-		data[i] = []float64{float64(i), float64(i)}
-	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 3)
-	require.Len(t, result.Labels, 30)
-}
-
-func BenchmarkElkan_KMeansPlusPlus(b *testing.B) {
-	data := make([][]float64, 1000)
-	for i := 0; i < 1000; i++ {
-		if i < 500 {
-			data[i] = []float64{float64(i % 10), float64(i % 10)}
-		} else {
-			data[i] = []float64{float64(i%10) + 50, float64(i%10) + 50}
-		}
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		kmeans := NewWithOptions(5,
-			WithAlgorithm(AlgorithmElkan),
-			WithInitMethod(InitKMeansPlusPlus),
-			WithMaxIter(100),
-		)
-		_, _ = kmeans.Cluster(data)
-	}
-}
-
-func BenchmarkElkan_VaryingDataSize(b *testing.B) {
-	sizes := []int{100, 500, 1000, 5000}
-
-	for _, size := range sizes {
-		data := make([][]float64, size)
-		for i := 0; i < size; i++ {
-			if i < size/2 {
-				data[i] = []float64{float64(i % 10), float64(i % 10)}
-			} else {
-				data[i] = []float64{float64(i%10) + 50, float64(i%10) + 50}
-			}
-		}
-
-		b.Run(fmt.Sprintf("size_%d", size), func(b *testing.B) {
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				kmeans := NewWithOptions(5,
-					WithAlgorithm(AlgorithmElkan),
-					WithInitMethod(InitKMeansPlusPlus),
-					WithMaxIter(50),
-				)
-				_, _ = kmeans.Cluster(data)
-			}
-		})
-	}
-}
-
-func BenchmarkElkan_VsLloyd(b *testing.B) {
-	data := make([][]float64, 1000)
-	for i := 0; i < 1000; i++ {
-		if i < 500 {
-			data[i] = []float64{float64(i % 10), float64(i % 10)}
-		} else {
-			data[i] = []float64{float64(i%10) + 50, float64(i%10) + 50}
-		}
-	}
-
-	b.Run("Elkan", func(b *testing.B) {
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			kmeans := NewWithOptions(5,
-				WithAlgorithm(AlgorithmElkan),
-				WithInitMethod(InitKMeansPlusPlus),
-				WithMaxIter(100),
-			)
-			_, _ = kmeans.Cluster(data)
-		}
-	})
-
-	b.Run("Lloyd", func(b *testing.B) {
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			kmeans := NewWithOptions(5,
-				WithAlgorithm(AlgorithmLloyd),
-				WithInitMethod(InitKMeansPlusPlus),
-				WithMaxIter(100),
-			)
-			_, _ = kmeans.Cluster(data)
-		}
-	})
 }
 
 func TestWithRandomState(t *testing.T) {
@@ -3294,7 +2571,6 @@ func TestValidate_NInit(t *testing.T) {
 		Tol:                  1e-4,
 		NCentroidsInitTrials: 5,
 		RandomState:          rand.New(rand.NewSource(42)),
-		Algorithm:            AlgorithmLloyd,
 		initialized:          true,
 	}
 
@@ -3310,7 +2586,6 @@ func TestValidate_MaxIter(t *testing.T) {
 		Tol:                  1e-4,
 		NCentroidsInitTrials: 5,
 		RandomState:          rand.New(rand.NewSource(42)),
-		Algorithm:            AlgorithmLloyd,
 		initialized:          true,
 	}
 
@@ -3326,7 +2601,6 @@ func TestValidate_Tol(t *testing.T) {
 		Tol:                  0,
 		NCentroidsInitTrials: 5,
 		RandomState:          rand.New(rand.NewSource(42)),
-		Algorithm:            AlgorithmLloyd,
 		initialized:          true,
 	}
 
@@ -3342,7 +2616,6 @@ func TestValidate_NCentroidsInitTrials(t *testing.T) {
 		Tol:                  1e-4,
 		NCentroidsInitTrials: 0,
 		RandomState:          rand.New(rand.NewSource(42)),
-		Algorithm:            AlgorithmLloyd,
 		initialized:          true,
 	}
 
@@ -3358,85 +2631,11 @@ func TestValidate_RandomState(t *testing.T) {
 		Tol:                  1e-4,
 		NCentroidsInitTrials: 5,
 		RandomState:          nil,
-		Algorithm:            AlgorithmLloyd,
 		initialized:          true,
 	}
 
 	err := k.Validate()
 	require.Error(t, err)
-}
-
-func TestValidate_Algorithm(t *testing.T) {
-	k := &Kmeans{
-		NClusters:            2,
-		NInit:                1,
-		MaxIter:              100,
-		Tol:                  1e-4,
-		NCentroidsInitTrials: 5,
-		RandomState:          rand.New(rand.NewSource(42)),
-		Algorithm:            "invalid",
-		initialized:          true,
-	}
-
-	err := k.Validate()
-	require.Error(t, err)
-}
-
-func TestElkanKMeans_ConvergenceByChanged(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithAlgorithm(AlgorithmElkan),
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-		WithMaxIter(50),
-		WithTol(1e-10),
-	)
-
-	data := [][]float64{
-		{1.0, 1.0},
-		{1.1, 1.1},
-		{1.2, 1.2},
-		{10.0, 10.0},
-		{10.1, 10.1},
-		{10.2, 10.2},
-	}
-
-	result := kmeans.elkanKMeans(data)
-
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 6)
-	require.Positive(t, result.Inertia)
-}
-
-func TestElkanAssignStep_Optimization1(t *testing.T) {
-	data := [][]float64{
-		{0.0, 0.0},
-		{100.0, 100.0},
-	}
-
-	centers := [][]float64{{1.0, 1.0}, {99.0, 99.0}}
-
-	state := initializeElkanState(data, centers)
-	state.upperBounds[0] = 1.0
-	state.centerDistances[1] = 138.6
-
-	elkanAssignStep(data, centers, state)
-
-	require.Equal(t, 0, state.assignments[0])
-}
-
-func TestElkanAssignStep_Optimization2(t *testing.T) {
-	data := [][]float64{
-		{5.0, 5.0},
-		{50.0, 50.0},
-	}
-
-	centers := [][]float64{{1.0, 1.0}, {99.0, 99.0}}
-
-	state := initializeElkanState(data, centers)
-
-	elkanAssignStep(data, centers, state)
-
-	require.Len(t, state.assignments, 2)
 }
 
 func TestWeightedRandomChoice_NaN(t *testing.T) {

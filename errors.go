@@ -14,5 +14,4 @@ var (
 	ErrEmptyData                   = errors.New("data cannot be empty")
 	ErrInvalidData                 = errors.New("data must be a 2D slice")
 	ErrConvergenceFailed           = errors.New("algorithm failed to converge within max_iterations")
-	ErrInvalidAlgorithm            = errors.New("invalid algorithm")
 )
