@@ -202,6 +202,11 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	}
 
 	labels := make([]int, len(data))
+	// Scratch buffer reused across initialization runs (only needed by k-means++)
+	var distances []float64
+	if k.Init != InitRandom {
+		distances = make([]float64, len(data))
+	}
 	var (
 		bestResult *Result
 		bestLabels []int
@@ -209,7 +214,7 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 
 	// Run the clustering algorithm multiple times and return the best result
 	for range k.NInit {
-		result := k.lloydKMeans(data, labels)
+		result := k.lloydKMeans(data, labels, distances)
 		if bestResult == nil || result.Inertia < bestResult.Inertia {
 			bestResult = result
 			bestLabels = append(bestLabels[:0], labels...)
@@ -281,6 +286,13 @@ func (k *Kmeans) initRandomCentroids(data [][]float64) [][]float64 {
 // from existing centroids, ensuring better initial placement than random selection.
 // The algorithm guarantees that no duplicate data points are selected as centroids.
 func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
+	return k.initKMeansPlusPlusCentroidsWithDistances(data, make([]float64, len(data)))
+}
+
+// initKMeansPlusPlusCentroidsWithDistances initializes cluster centroids using the k-means++
+// algorithm, reusing a caller-provided distances buffer (allocated once per Cluster call).
+// The buffer must have len(data) capacity; it is re-initialized per run.
+func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(data [][]float64, distances []float64) [][]float64 {
 	nLocalTrials := k.NCentroidsInitTrials
 
 	centroids := make([][]float64, 0, k.NClusters)
@@ -288,28 +300,32 @@ func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
 	// Track already selected indices to avoid duplicates
 	usedIndices := make(map[int]struct{})
 
-	// Select first centroid randomly
-	firstCenterIdx := k.RandomState.Intn(len(data))
-	centroids = append(centroids, make([]float64, len(data[firstCenterIdx])))
-	copy(centroids[0], data[firstCenterIdx])
-	usedIndices[firstCenterIdx] = struct{}{}
+	// Squared distance from each data point to the nearest selected centroid
+	if len(distances) != len(data) {
+		distances = make([]float64, len(data))
+	}
+	for i := range distances {
+		distances[i] = math.Inf(1)
+	}
 
-	distances := make([]float64, len(data))
+	// Adds a data point as a centroid and updates the nearest-centroid distances.
+	addCentroid := func(idx int) {
+		centroid := make([]float64, len(data[idx]))
+		copy(centroid, data[idx])
+		centroids = append(centroids, centroid)
+		usedIndices[idx] = struct{}{}
+		updateMinDistances(distances, data, centroid)
+	}
+
+	// Select first centroid randomly
+	addCentroid(k.RandomState.Intn(len(data)))
 
 	// Select remaining centroids
 	for len(centroids) < k.NClusters {
-		// Compute squared distances to nearest centroids for each data point
-		distances = computeDistancesToCenters(data, centroids, distances)
-
 		// When nLocalTrials <= 1, use standard k-means++ initialization
 		if nLocalTrials <= 1 {
 			// Select next centroid with probability proportional to squared distance
-			nextCentroidIdx := selectUniqueIndex(distances, usedIndices, k.RandomState)
-
-			newCentroid := make([]float64, len(data[nextCentroidIdx]))
-			copy(newCentroid, data[nextCentroidIdx])
-			centroids = append(centroids, newCentroid)
-			usedIndices[nextCentroidIdx] = struct{}{}
+			addCentroid(selectUniqueIndex(distances, usedIndices, k.RandomState))
 		} else {
 			// Use greedy k-means++ initialization with nLocalTrials
 			bestCentroidIdx := -1
@@ -319,14 +335,9 @@ func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
 				// Select candidate centroid with probability proportional to squared distance
 				candidateIdx := selectUniqueIndex(distances, usedIndices, k.RandomState)
 
-				// Create temporary list of centroids with this candidate
-				tempCentroids := make([][]float64, len(centroids)+1)
-				copy(tempCentroids, centroids)
-				tempCentroids[len(centroids)] = make([]float64, len(data[candidateIdx]))
-				copy(tempCentroids[len(centroids)], data[candidateIdx])
-
-				// Calculate inertia with this candidate
-				inertia := calculateInertia(data, tempCentroids)
+				// Calculate the inertia with this candidate without materializing the
+				// candidate as a centroid: min(existing distance, distance to candidate)
+				inertia := candidateCost(distances, data, data[candidateIdx])
 
 				// If this candidate is better than the best so far, update the best centroid
 				if inertia < bestInertia {
@@ -337,17 +348,10 @@ func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
 
 			// Add the best centroid to the list of centroids
 			if bestCentroidIdx != -1 {
-				newCentroid := make([]float64, len(data[bestCentroidIdx]))
-				copy(newCentroid, data[bestCentroidIdx])
-				centroids = append(centroids, newCentroid)
-				usedIndices[bestCentroidIdx] = struct{}{}
+				addCentroid(bestCentroidIdx)
 			} else {
 				// Fallback: select a random unused data point as centroid
-				fallbackIdx := selectUniqueIndex(distances, usedIndices, k.RandomState)
-				newCentroid := make([]float64, len(data[fallbackIdx]))
-				copy(newCentroid, data[fallbackIdx])
-				centroids = append(centroids, newCentroid)
-				usedIndices[fallbackIdx] = struct{}{}
+				addCentroid(selectUniqueIndex(distances, usedIndices, k.RandomState))
 			}
 		}
 	}
@@ -368,18 +372,19 @@ func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
 //
 //	A slice of new cluster centers, where each center is a slice of float64.
 func (k *Kmeans) initCentroids(data [][]float64) [][]float64 {
-	var centers [][]float64
+	return k.initCentroidsWithDistances(data, make([]float64, len(data)))
+}
 
+// initCentroidsWithDistances initializes the cluster centroids using the selected initialization
+// method, reusing a caller-provided distances buffer for the k-means++ method. The buffer is
+// ignored by initialization methods that do not need it.
+func (k *Kmeans) initCentroidsWithDistances(data [][]float64, distances []float64) [][]float64 {
 	switch k.Init {
 	case InitRandom:
-		centers = k.initRandomCentroids(data)
-	case InitKMeansPlusPlus:
-		centers = k.initKMeansPlusPlusCentroids(data)
+		return k.initRandomCentroids(data)
 	default:
-		centers = k.initKMeansPlusPlusCentroids(data)
+		return k.initKMeansPlusPlusCentroidsWithDistances(data, distances)
 	}
-
-	return centers
 }
 
 // clusterSingle performs K-means clustering using Lloyd's algorithm.
@@ -396,7 +401,8 @@ func (k *Kmeans) initCentroids(data [][]float64) [][]float64 {
 //	A pointer to Result containing final centroids, labels, and inertia.
 func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 	labels := make([]int, len(data))
-	return k.lloydKMeans(data, labels)
+	distances := make([]float64, len(data))
+	return k.lloydKMeans(data, labels, distances)
 }
 
 // lloydKMeans performs K-means clustering using Lloyd's algorithm.
@@ -413,8 +419,8 @@ func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 // Returns:
 //
 //	A pointer to Result containing final centroids, labels, and inertia.
-func (k *Kmeans) lloydKMeans(data [][]float64, labels []int) *Result {
-	centers := k.initCentroids(data)
+func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64) *Result {
+	centers := k.initCentroidsWithDistances(data, distances)
 
 	dim := len(data[0])
 	next := newCenterBuffer(k.NClusters, dim)
@@ -604,6 +610,31 @@ func calculateInertiaByLabels(data [][]float64, centers [][]float64, labels []in
 	}
 
 	return inertia
+}
+
+// updateMinDistances updates distances[i] to the minimum of its current value and the squared
+// Euclidean distance from data point i to the given center. Used in k-means++ initialization to
+// incrementally maintain each point's distance to the nearest selected centroid.
+func updateMinDistances(distances []float64, data [][]float64, center []float64) {
+	for i, point := range data {
+		dist := squaredEuclideanDistance(point, center)
+		distances[i] = math.Min(distances[i], dist)
+	}
+}
+
+// candidateCost returns the total inertia that would result from adding the given candidate
+// center to the set of already selected centers, given the current per-point distances to the
+// nearest selected center. This is the sum over points of min(distances[i], squared distance to
+// candidate), which equals the inertia of the selected centers plus the candidate.
+func candidateCost(distances []float64, data [][]float64, candidate []float64) float64 {
+	total := 0.0
+
+	for i, point := range data {
+		dist := squaredEuclideanDistance(point, candidate)
+		total += math.Min(distances[i], dist)
+	}
+
+	return total
 }
 
 // computeDistancesToCenters calculates the minimum squared Euclidean distance from each data point to its nearest cluster center.
