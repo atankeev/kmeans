@@ -190,6 +190,8 @@ if err != nil {
         log.Fatal("Empty dataset provided")
     case errors.Is(err, kmeans.ErrInvalidK):
         log.Fatal("Invalid number of clusters")
+    case errors.Is(err, kmeans.ErrNonFiniteData):
+        log.Fatal("Dataset contains a NaN or infinite coordinate")
     default:
         log.Fatal("Clustering failed:", err)
     }

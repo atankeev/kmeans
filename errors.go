@@ -13,5 +13,7 @@ var (
 	ErrInvalidK                    = errors.New("k must be positive and less than number of samples")
 	ErrEmptyData                   = errors.New("data cannot be empty")
 	ErrInvalidData                 = errors.New("data must be a 2D slice")
-	ErrConvergenceFailed           = errors.New("algorithm failed to converge within max_iterations")
+	// ErrNonFiniteData indicates that a coordinate is NaN or infinite.
+	ErrNonFiniteData     = errors.New("data contains a non-finite coordinate")
+	ErrConvergenceFailed = errors.New("algorithm failed to converge within max_iterations")
 )

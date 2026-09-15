@@ -245,12 +245,16 @@ func (k *Kmeans) validateData(data [][]float64) error {
 		return ErrEmptyData
 	}
 
-	// Validate that all data points have the same dimensions
-	if len(data) > 0 {
-		expectedDim := len(data[0])
-		for i, point := range data {
-			if len(point) != expectedDim {
-				return fmt.Errorf("data point at index %d has dimension %d, expected %d", i, len(point), expectedDim)
+	// Validate that all data points have the same dimensions and finite coordinates.
+	expectedDim := len(data[0])
+	for pointIndex, point := range data {
+		if len(point) != expectedDim {
+			return fmt.Errorf("data point at index %d has dimension %d, expected %d", pointIndex, len(point), expectedDim)
+		}
+
+		for dimensionIndex, coordinate := range point {
+			if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
+				return fmt.Errorf("%w at point %d, dimension %d", ErrNonFiniteData, pointIndex, dimensionIndex)
 			}
 		}
 	}

@@ -2285,43 +2285,40 @@ func TestCluster_Lloyd_SmallNumbers(t *testing.T) {
 	require.Positive(t, result.Inertia)
 }
 
-func TestCluster_Lloyd_NaNValues(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
+func TestCluster_Lloyd_NonFiniteValues(t *testing.T) {
+	t.Parallel()
 
-	data := [][]float64{
-		{1.0, 2.0},
-		{3.0, 4.0},
-		{math.NaN(), 5.0},
-		{6.0, math.NaN()},
+	tests := []struct {
+		name       string
+		coordinate float64
+	}{
+		{name: "NaN", coordinate: math.NaN()},
+		{name: "positive infinity", coordinate: math.Inf(1)},
+		{name: "negative infinity", coordinate: math.Inf(-1)},
 	}
 
-	result, err := kmeans.Cluster(data)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.NotZero(t, result.Inertia)
-}
+			kmeans := NewWithOptions(2,
+				WithInitMethod(InitKMeansPlusPlus),
+				WithRandomSeed(42),
+			)
+			data := [][]float64{
+				{1.0, 2.0},
+				{3.0, 4.0},
+				{tt.coordinate, 5.0},
+				{6.0, 7.0},
+			}
 
-func TestCluster_Lloyd_InfValues(t *testing.T) {
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
+			result, err := kmeans.Cluster(data)
 
-	data := [][]float64{
-		{1.0, 2.0},
-		{3.0, 4.0},
-		{math.Inf(1), 5.0},
-		{6.0, 7.0},
+			require.Nil(t, result)
+			require.ErrorIs(t, err, ErrNonFiniteData)
+			require.EqualError(t, err, "invalid data: data contains a non-finite coordinate at point 2, dimension 0")
+		})
 	}
-
-	result, err := kmeans.Cluster(data)
-
-	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
 }
 
 func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
