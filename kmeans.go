@@ -180,6 +180,12 @@ func (k *Kmeans) Validate() error {
 		return ErrInvalidTol
 	}
 
+	switch k.Init {
+	case InitRandom, InitKMeansPlusPlus:
+	default:
+		return ErrInvalidInitMethod
+	}
+
 	if k.NCentroidsInitTrials <= 0 {
 		return ErrInvalidNCentroidsInitTrials
 	}

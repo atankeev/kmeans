@@ -2479,8 +2479,11 @@ func TestInitCentroids_KMeansPlusPlus(t *testing.T) {
 	}
 }
 
-func TestInitCentroids_DefaultFallback(t *testing.T) {
+func TestInitCentroids_Default(t *testing.T) {
+	t.Parallel()
+
 	kmeans := NewWithOptions(2, WithRandomSeed(42))
+	require.Equal(t, InitKMeansPlusPlus, kmeans.Init)
 
 	data := [][]float64{
 		{1.0, 2.0},
@@ -2733,6 +2736,60 @@ func TestValidate_RandomState(t *testing.T) {
 
 	err := k.Validate()
 	require.Error(t, err)
+}
+
+func TestValidate_InitMethod(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		method  InitMethod
+		wantErr error
+	}{
+		{
+			name:   "random",
+			method: InitRandom,
+		},
+		{
+			name:   "k-means++",
+			method: InitKMeansPlusPlus,
+		},
+		{
+			name:    "empty",
+			method:  "",
+			wantErr: ErrInvalidInitMethod,
+		},
+		{
+			name:    "unknown",
+			method:  "kmeans++",
+			wantErr: ErrInvalidInitMethod,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			kmeans := NewWithOptions(2, WithInitMethod(tt.method))
+			err := kmeans.Validate()
+
+			if tt.wantErr == nil {
+				require.NoError(t, err)
+				return
+			}
+
+			require.ErrorIs(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestCluster_InvalidInitMethod(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(2, WithInitMethod("kmeans++"))
+	_, err := kmeans.Cluster([][]float64{{1, 2}, {3, 4}})
+
+	require.ErrorIs(t, err, ErrInvalidInitMethod)
 }
 
 func TestWeightedRandomChoice_NaN(t *testing.T) {
