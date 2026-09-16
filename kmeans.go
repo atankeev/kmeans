@@ -1,9 +1,11 @@
 package kmeans
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"time"
 )
 
@@ -202,11 +204,8 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	}
 
 	labels := make([]int, len(data))
-	// Scratch buffer reused across initialization runs (only needed by k-means++)
-	var distances []float64
-	if k.Init != InitRandom {
-		distances = make([]float64, len(data))
-	}
+	// Scratch buffer reused by initialization and empty-cluster recovery.
+	distances := make([]float64, len(data))
 	var (
 		bestResult *Result
 		bestLabels []int
@@ -425,6 +424,7 @@ func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 //	A pointer to Result containing final centroids, labels, and inertia.
 func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64) *Result {
 	centers := k.initCentroidsWithDistances(data, distances)
+	clear(labels)
 
 	dim := len(data[0])
 	next := newCenterBuffer(k.NClusters, dim)
@@ -434,11 +434,12 @@ func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64
 		// Step 1: Assign each data point to the nearest cluster center
 		labels = assignPointsToClusters(data, centers, labels)
 
-		// Step 2: Update cluster centers based on current assignments (Lloyd's update step)
-		// This computes the mean of all points assigned to each cluster.
+		// Step 2: Update cluster centers based on current assignments (Lloyd's update step).
+		// Empty clusters take the farthest assigned samples, ordered deterministically by
+		// descending assignment error and then ascending sample index.
 		clearCenters(next)
 		clear(counts)
-		k.updateCentersLloydInto(next, counts, data, labels)
+		k.updateCentersLloydInto(next, counts, distances, data, labels, centers)
 
 		// Check for convergence against the previous centers before replacing them
 		converged := checkConvergence(centers, next, k.Tol)
@@ -466,21 +467,29 @@ func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64
 // updateCentersLloyd computes new cluster centers (centroids) for the Lloyd's algorithm step.
 //
 // For each cluster, it calculates the mean of all points assigned to that cluster.
-// If a cluster has no assigned points, its center will remain a zero vector.
+// Empty clusters are relocated to the samples with the largest current assignment error.
 //
 // Parameters:
 //
 //	data:   The dataset, where each element is a point (slice of float64).
-//	labels: Cluster assignments for each point in data. labels[i] is the cluster index for data[i].
+//	labels:  Cluster assignments for each point in data. labels[i] is the cluster index for data[i].
+//	centers: Cluster centers used to produce labels.
 //
 // Returns:
 //
 //	A slice of new cluster centers, where each center is a slice of float64.
-func (k *Kmeans) updateCentersLloyd(data [][]float64, labels []int) [][]float64 {
+func (k *Kmeans) updateCentersLloyd(data [][]float64, labels []int, centers [][]float64) [][]float64 {
 	dim := len(data[0])
 	newCenters := newCenterBuffer(k.NClusters, dim)
 
-	k.updateCentersLloydInto(newCenters, make([]int, k.NClusters), data, labels)
+	k.updateCentersLloydInto(
+		newCenters,
+		make([]int, k.NClusters),
+		make([]float64, len(data)),
+		data,
+		labels,
+		centers,
+	)
 
 	return newCenters
 }
@@ -488,9 +497,16 @@ func (k *Kmeans) updateCentersLloyd(data [][]float64, labels []int) [][]float64 
 // updateCentersLloydInto computes new cluster centers (centroids) into the provided dst buffer
 // for the Lloyd's algorithm step. dst must have k.NClusters rows of len(data[0]) columns and
 // must be zeroed before the call, as must be counts. For each cluster, it calculates the mean of
-// all points assigned to that cluster. If a cluster has no assigned points, its center remains a
-// zero vector.
-func (k *Kmeans) updateCentersLloydInto(dst [][]float64, counts []int, data [][]float64, labels []int) {
+// all points assigned to that cluster. Empty clusters take distinct farthest samples from clusters
+// that can donate a sample without becoming empty themselves.
+func (k *Kmeans) updateCentersLloydInto(
+	dst [][]float64,
+	counts []int,
+	distances []float64,
+	data [][]float64,
+	labels []int,
+	centers [][]float64,
+) {
 	dim := len(data[0])
 
 	for i, point := range data {
@@ -501,12 +517,64 @@ func (k *Kmeans) updateCentersLloydInto(dst [][]float64, counts []int, data [][]
 		counts[cluster]++
 	}
 
+	k.relocateEmptyClusters(dst, counts, distances, data, labels, centers)
+
 	for i := 0; i < k.NClusters; i++ {
-		if counts[i] > 0 {
-			for d := range dim {
-				dst[i][d] /= float64(counts[i])
-			}
+		for d := range dim {
+			dst[i][d] /= float64(counts[i])
 		}
+	}
+}
+
+// relocateEmptyClusters moves distinct samples into empty clusters. Candidates are ranked by
+// descending squared distance to their currently assigned center, with lower sample indexes first
+// on ties. A source cluster must retain at least one sample.
+func (k *Kmeans) relocateEmptyClusters(
+	sums [][]float64,
+	counts []int,
+	distances []float64,
+	data [][]float64,
+	labels []int,
+	centers [][]float64,
+) {
+	hasEmptyCluster := slices.Contains(counts, 0)
+	if !hasEmptyCluster {
+		return
+	}
+
+	candidates := make([]int, len(data))
+	for i, point := range data {
+		candidates[i] = i
+		distances[i] = squaredEuclideanDistance(point, centers[labels[i]])
+	}
+	slices.SortFunc(candidates, func(a, b int) int {
+		if byDistance := cmp.Compare(distances[b], distances[a]); byDistance != 0 {
+			return byDistance
+		}
+
+		return cmp.Compare(a, b)
+	})
+
+	nextCandidate := 0
+	for emptyCluster := 0; emptyCluster < k.NClusters; emptyCluster++ {
+		if counts[emptyCluster] != 0 {
+			continue
+		}
+
+		for counts[labels[candidates[nextCandidate]]] <= 1 {
+			nextCandidate++
+		}
+
+		candidate := candidates[nextCandidate]
+		nextCandidate++
+		sourceCluster := labels[candidate]
+		for dimension, coordinate := range data[candidate] {
+			sums[sourceCluster][dimension] -= coordinate
+			sums[emptyCluster][dimension] += coordinate
+		}
+		counts[sourceCluster]--
+		counts[emptyCluster]++
+		labels[candidate] = emptyCluster
 	}
 }
 
@@ -542,10 +610,14 @@ func clearCenters(buf [][]float64) {
 //	A slice of integers where the i-th element is the index of the nearest center for data point i.
 func assignPointsToClusters(data [][]float64, centers [][]float64, labels []int) []int {
 	for i, point := range data {
-		minDistance := math.Inf(1)
-		bestCluster := 0
+		bestCluster := labels[i]
+		if bestCluster < 0 || bestCluster >= len(centers) {
+			bestCluster = 0
+		}
+		minDistance := squaredEuclideanDistance(point, centers[bestCluster])
 
-		// Find the nearest center for each point
+		// Find the nearest center for each point. Keeping the current label on exact ties
+		// lets recovered clusters remain populated when samples or centers are duplicates.
 		for j, center := range centers {
 			distance := squaredEuclideanDistance(point, center)
 			if distance < minDistance {

@@ -10,6 +10,7 @@ A K-means clustering library for Go implementing Lloyd's algorithm.
 - **Multiple initialization methods**: Random and K-means++
 - **Configurable parameters**: Number of clusters, iterations, tolerance, etc.
 - **Reproducible results**: Fixed random seed support
+- **Empty-cluster recovery**: Deterministic relocation to farthest assigned samples
 - **Comprehensive error handling**: Detailed validation and error messages
 
 ## Installation
@@ -119,6 +120,7 @@ type Result struct {
 
 #### Lloyd's Algorithm
 - **Description**: Standard K-means algorithm
+- **Empty clusters**: Relocated to distinct samples with the largest current assignment error; ties use sample order
 - **Best for**: General purpose clustering
 - **Time Complexity**: O(n*k*i*d) where n=points, k=clusters, i=iterations, d=dimensions
 
@@ -170,6 +172,8 @@ kmeans := kmeans.NewWithOptions(3,
 )
 result, err := kmeans.Cluster(data)
 ```
+
+Using the same seed and options produces reproducible initialization and empty-cluster recovery.
 
 ## Performance Tips
 

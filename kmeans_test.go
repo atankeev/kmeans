@@ -1923,60 +1923,84 @@ func TestCalculateInertiaByLabels(t *testing.T) {
 
 // Unit tests for updateCentersLloyd
 func TestUpdateCentersLloyd(t *testing.T) {
-	k := &Kmeans{NClusters: 2}
+	t.Parallel()
+
 	tests := []struct {
-		name      string
-		data      [][]float64
-		labels    []int
-		want      [][]float64
-		wantPanic bool
+		name       string
+		nClusters  int
+		data       [][]float64
+		labels     []int
+		centers    [][]float64
+		want       [][]float64
+		wantLabels []int
+		wantPanic  bool
 	}{
 		{
-			name:   "Simple case: 2 clusters, 2D",
-			data:   [][]float64{{1, 2}, {3, 4}, {5, 6}},
-			labels: []int{0, 1, 0},
-			want:   [][]float64{{(1 + 5) / 2.0, (2 + 6) / 2.0}, {3, 4}},
+			name:       "Simple case: 2 clusters, 2D",
+			nClusters:  2,
+			data:       [][]float64{{1, 2}, {3, 4}, {5, 6}},
+			labels:     []int{0, 1, 0},
+			centers:    [][]float64{{1, 2}, {3, 4}},
+			want:       [][]float64{{(1 + 5) / 2.0, (2 + 6) / 2.0}, {3, 4}},
+			wantLabels: []int{0, 1, 0},
 		},
 		{
-			name:   "All points in one cluster",
-			data:   [][]float64{{1, 2}, {3, 4}},
-			labels: []int{1, 1},
-			want:   [][]float64{{0, 0}, {2, 3}},
+			name:       "Empty cluster takes farthest assigned point",
+			nClusters:  2,
+			data:       [][]float64{{10, 20}, {30, 40}},
+			labels:     []int{1, 1},
+			centers:    [][]float64{{10, 20}, {30, 40}},
+			want:       [][]float64{{10, 20}, {30, 40}},
+			wantLabels: []int{0, 1},
 		},
 		{
-			name:   "Each point its own cluster",
-			data:   [][]float64{{1, 2}, {3, 4}},
-			labels: []int{0, 1},
-			want:   [][]float64{{1, 2}, {3, 4}},
+			name:       "Each point its own cluster",
+			nClusters:  2,
+			data:       [][]float64{{1, 2}, {3, 4}},
+			labels:     []int{0, 1},
+			centers:    [][]float64{{1, 2}, {3, 4}},
+			want:       [][]float64{{1, 2}, {3, 4}},
+			wantLabels: []int{0, 1},
+		},
+		{
+			name:       "Multiple empty clusters use distinct candidates",
+			nClusters:  3,
+			data:       [][]float64{{10, 20}, {30, 20}, {20, 20}},
+			labels:     []int{0, 0, 0},
+			centers:    [][]float64{{20, 20}, {100, 100}, {200, 200}},
+			want:       [][]float64{{20, 20}, {10, 20}, {30, 20}},
+			wantLabels: []int{1, 2, 0},
 		},
 		{
 			name:      "Empty data (should panic)",
+			nClusters: 2,
 			data:      [][]float64{},
 			labels:    []int{},
+			centers:   [][]float64{{0, 0}, {1, 1}},
 			wantPanic: true,
 		},
 		{
 			name:      "Labels length mismatch (should panic)",
+			nClusters: 2,
 			data:      [][]float64{{1, 2}},
 			labels:    []int{},
+			centers:   [][]float64{{1, 2}, {3, 4}},
 			wantPanic: true,
 		},
 		{
-			name:   "Cluster with no points",
-			data:   [][]float64{{1, 2}},
-			labels: []int{1},
-			want:   [][]float64{{0, 0}, {1, 2}},
-		},
-		{
 			name:      "Different dimensions (should panic)",
+			nClusters: 2,
 			data:      [][]float64{{1, 2}, {3}},
 			labels:    []int{0, 1},
+			centers:   [][]float64{{1, 2}, {3, 4}},
 			wantPanic: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			defer func() {
 				recoverVal := recover()
 				if tt.wantPanic && recoverVal == nil {
@@ -1987,14 +2011,60 @@ func TestUpdateCentersLloyd(t *testing.T) {
 				}
 			}()
 			if !tt.wantPanic {
-				got := k.updateCentersLloyd(tt.data, tt.labels)
+				k := &Kmeans{NClusters: tt.nClusters}
+				got := k.updateCentersLloyd(tt.data, tt.labels, tt.centers)
 				if !reflect.DeepEqual(got, tt.want) {
 					t.Errorf("updateCentersLloyd(%v, %v) = %v; want %v", tt.data, tt.labels, got, tt.want)
 				}
+				require.Equal(t, tt.wantLabels, tt.labels)
 			} else {
-				_ = k.updateCentersLloyd(tt.data, tt.labels)
+				k := &Kmeans{NClusters: tt.nClusters}
+				_ = k.updateCentersLloyd(tt.data, tt.labels, tt.centers)
 			}
 		})
+	}
+}
+
+func TestCluster_Lloyd_RecoversEmptyClusters(t *testing.T) {
+	t.Parallel()
+
+	data := [][]float64{
+		{100, 200},
+		{100, 200},
+		{100, 200},
+		{100, 200},
+	}
+	cluster := func() *Result {
+		kmeans := NewWithOptions(3,
+			WithInitMethod(InitKMeansPlusPlus),
+			WithRandomSeed(42),
+			WithNInit(1),
+		)
+		result, err := kmeans.Cluster(data)
+		require.NoError(t, err)
+
+		return result
+	}
+
+	first := cluster()
+	second := cluster()
+	require.Equal(t, first, second)
+	require.Equal(t, calculateInertiaByLabels(data, first.Centroids, first.Labels), first.Inertia)
+
+	counts := make([]int, 3)
+	for pointIndex, label := range first.Labels {
+		counts[label]++
+		assignedDistance := squaredEuclideanDistance(data[pointIndex], first.Centroids[label])
+		for _, centroid := range first.Centroids {
+			require.LessOrEqual(t, assignedDistance, squaredEuclideanDistance(data[pointIndex], centroid))
+		}
+	}
+	for _, count := range counts {
+		require.Positive(t, count)
+	}
+	for _, centroid := range first.Centroids {
+		require.Equal(t, []float64{100, 200}, centroid)
+		require.NotEqual(t, []float64{0, 0}, centroid)
 	}
 }
 
