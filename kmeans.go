@@ -192,7 +192,11 @@ func (k *Kmeans) Validate() error {
 	return nil
 }
 
-// Cluster performs K-means clustering on the given data
+// Cluster performs K-means clustering on the given data.
+//
+// If the selected lowest-inertia run does not converge within MaxIter, Cluster returns
+// its final result together with ErrConvergenceFailed. For configuration and data errors,
+// the returned result is nil.
 func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	// Validate configuration
 	if err := k.Validate(); err != nil {
@@ -208,20 +212,25 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	// Scratch buffer reused by initialization and empty-cluster recovery.
 	distances := make([]float64, len(data))
 	var (
-		bestResult *Result
-		bestLabels []int
+		bestResult    *Result
+		bestLabels    []int
+		bestConverged bool
 	)
 
 	// Run the clustering algorithm multiple times and return the best result
 	for range k.NInit {
-		result := k.lloydKMeans(data, labels, distances)
+		result, converged := k.lloydKMeans(data, labels, distances)
 		if bestResult == nil || result.Inertia < bestResult.Inertia {
 			bestResult = result
 			bestLabels = append(bestLabels[:0], labels...)
+			bestConverged = converged
 		}
 	}
 
 	bestResult.Labels = bestLabels
+	if !bestConverged {
+		return bestResult, ErrConvergenceFailed
+	}
 
 	return bestResult, nil
 }
@@ -406,7 +415,9 @@ func (k *Kmeans) initCentroidsWithDistances(data [][]float64, distances []float6
 func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 	labels := make([]int, len(data))
 	distances := make([]float64, len(data))
-	return k.lloydKMeans(data, labels, distances)
+	result, _ := k.lloydKMeans(data, labels, distances)
+
+	return result
 }
 
 // lloydKMeans performs K-means clustering using Lloyd's algorithm.
@@ -422,14 +433,15 @@ func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 //
 // Returns:
 //
-//	A pointer to Result containing final centroids, labels, and inertia.
-func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64) *Result {
+//	A pointer to Result containing final centroids, labels, and inertia, and whether the run converged.
+func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64) (*Result, bool) {
 	centers := k.initCentroidsWithDistances(data, distances)
 	clear(labels)
 
 	dim := len(data[0])
 	next := newCenterBuffer(k.NClusters, dim)
 	counts := make([]int, k.NClusters)
+	converged := false
 
 	for range k.MaxIter {
 		// Step 1: Assign each data point to the nearest cluster center
@@ -443,7 +455,7 @@ func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64
 		k.updateCentersLloydInto(next, counts, distances, data, labels, centers)
 
 		// Check for convergence against the previous centers before replacing them
-		converged := checkConvergence(centers, next, k.Tol)
+		converged = checkConvergence(centers, next, k.Tol)
 
 		// Swap buffers: the just-computed centers become the current ones for the next iteration
 		centers, next = next, centers
@@ -462,7 +474,7 @@ func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64
 		Centroids: centers,
 		Labels:    labels,
 		Inertia:   finalInertia,
-	}
+	}, converged
 }
 
 // updateCentersLloyd computes new cluster centers (centroids) for the Lloyd's algorithm step.

@@ -126,6 +126,7 @@ positive, and the convergence tolerance must be positive and finite.
 #### Lloyd's Algorithm
 - **Description**: Standard K-means algorithm
 - **Empty clusters**: Relocated to distinct samples with the largest current assignment error; ties use sample order
+- **Stopping behavior**: Each initialization stops when its centroids satisfy `Tol` or after `MaxIter` updates. The lowest-inertia run is selected. If that run reaches `MaxIter` without convergence, `Cluster` returns its final result together with `ErrConvergenceFailed`.
 - **Best for**: General purpose clustering
 - **Time Complexity**: O(n*k*i*d) where n=points, k=clusters, i=iterations, d=dimensions
 
@@ -193,7 +194,10 @@ The library provides comprehensive error handling:
 
 ```go
 result, err := kmeans.Cluster(data)
-if err != nil {
+if errors.Is(err, kmeans.ErrConvergenceFailed) {
+    // The final labels, centroids, and inertia are still available as an approximation.
+    log.Printf("Clustering reached MaxIter; using result with inertia %.2f", result.Inertia)
+} else if err != nil {
     switch {
     case errors.Is(err, kmeans.ErrEmptyData):
         log.Fatal("Empty dataset provided")
@@ -208,6 +212,9 @@ if err != nil {
     }
 }
 ```
+
+With multiple initializations, convergence status describes only the selected lowest-inertia run.
+Other validation and configuration errors return a nil result.
 
 ## Testing
 

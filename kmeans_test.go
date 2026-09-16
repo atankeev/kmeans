@@ -2177,6 +2177,8 @@ func TestCluster_Lloyd_Convergence(t *testing.T) {
 }
 
 func TestCluster_Lloyd_IteratesUntilConvergence(t *testing.T) {
+	t.Parallel()
+
 	data := make([][]float64, 500)
 	for i := range data {
 		if i < 250 {
@@ -2186,7 +2188,7 @@ func TestCluster_Lloyd_IteratesUntilConvergence(t *testing.T) {
 		}
 	}
 
-	run := func(maxIter int) *Result {
+	run := func(maxIter int) (*Result, error) {
 		kmeans := NewWithOptions(5,
 			WithInitMethod(InitRandom),
 			WithRandomSeed(7),
@@ -2194,39 +2196,63 @@ func TestCluster_Lloyd_IteratesUntilConvergence(t *testing.T) {
 			WithMaxIter(maxIter),
 			WithTol(1e-4),
 		)
-		result, err := kmeans.Cluster(data)
-		require.NoError(t, err)
-		return result
+
+		return kmeans.Cluster(data)
 	}
 
-	oneIter := run(1)
-	manyIter := run(300)
+	oneIter, err := run(1)
+	require.ErrorIs(t, err, ErrConvergenceFailed)
+	require.NotNil(t, oneIter)
+
+	manyIter, err := run(300)
+	require.NoError(t, err)
 
 	require.Less(t, manyIter.Inertia, oneIter.Inertia,
 		"Lloyd should keep refining centroids across iterations until convergence")
 }
 
 func TestCluster_Lloyd_MaxIterLimit(t *testing.T) {
-	kmeans := NewWithOptions(2,
+	t.Parallel()
+
+	kmeans := NewWithOptions(1,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
+		WithNInit(3),
 		WithMaxIter(1),
-		WithTol(1e-10),
+		WithTol(1e-12),
 	)
 
 	data := [][]float64{
-		{1.0, 2.0},
-		{1.5, 1.8},
-		{5.0, 8.0},
-		{8.0, 8.0},
+		{0},
+		{10},
 	}
 
 	result, err := kmeans.Cluster(data)
 
+	require.ErrorIs(t, err, ErrConvergenceFailed)
+	require.NotNil(t, result)
+	require.Equal(t, [][]float64{{5}}, result.Centroids)
+	require.Equal(t, []int{0, 0}, result.Labels)
+	require.Equal(t, 50.0, result.Inertia)
+}
+
+func TestCluster_Lloyd_ConvergesOnLastIteration(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(1,
+		WithInitMethod(InitKMeansPlusPlus),
+		WithRandomSeed(42),
+		WithNInit(1),
+		WithMaxIter(2),
+		WithTol(1e-12),
+	)
+
+	result, err := kmeans.Cluster([][]float64{{0}, {10}})
+
 	require.NoError(t, err)
-	require.Len(t, result.Centroids, 2)
-	require.Len(t, result.Labels, 4)
-	require.Positive(t, result.Inertia)
+	require.Equal(t, [][]float64{{5}}, result.Centroids)
+	require.Equal(t, []int{0, 0}, result.Labels)
+	require.Equal(t, 50.0, result.Inertia)
 }
 
 func TestCluster_Lloyd_MultipleNInit(t *testing.T) {

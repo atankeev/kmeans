@@ -16,6 +16,8 @@ var (
 	ErrEmptyData          = errors.New("data cannot be empty")
 	ErrInvalidData        = errors.New("data must be a 2D slice")
 	// ErrNonFiniteData indicates that a coordinate is NaN or infinite.
-	ErrNonFiniteData     = errors.New("data contains a non-finite coordinate")
+	ErrNonFiniteData = errors.New("data contains a non-finite coordinate")
+	// ErrConvergenceFailed indicates that the selected result did not converge within MaxIter.
+	// Cluster returns a usable final result together with this error.
 	ErrConvergenceFailed = errors.New("algorithm failed to converge within max_iterations")
 )
