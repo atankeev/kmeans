@@ -8,7 +8,7 @@ var (
 	ErrInvalidNInit                = errors.New("n_init must be positive")
 	ErrInvalidNCentroidsInitTrials = errors.New("n_centroids_init_trials must be positive")
 	ErrInvalidMaxIter              = errors.New("max_iter must be positive")
-	ErrInvalidTol                  = errors.New("tol must be positive")
+	ErrInvalidTol                  = errors.New("tol must be positive and finite")
 	// ErrInvalidInitMethod indicates that the configured centroid initialization method is unsupported.
 	ErrInvalidInitMethod  = errors.New("invalid initialization method")
 	ErrInvalidRandomState = errors.New("random_state cannot be nil")

@@ -90,7 +90,9 @@ func New(nClusters int) *Kmeans {
 	}
 }
 
-// NewWithOptions creates a new Kmeans instance with required nClusters and custom options
+// NewWithOptions creates a new Kmeans instance with required nClusters and custom options.
+// Options retain the values supplied by the caller, including invalid values. Call Validate to
+// check the configuration eagerly; Cluster also validates it before processing data.
 func NewWithOptions(nClusters int, options ...Option) *Kmeans {
 	kmeans := New(nClusters)
 
@@ -104,27 +106,21 @@ func NewWithOptions(nClusters int, options ...Option) *Kmeans {
 // WithNInit sets the number of initializations
 func WithNInit(nInit int) Option {
 	return func(k *Kmeans) {
-		if nInit > 0 {
-			k.NInit = nInit
-		}
+		k.NInit = nInit
 	}
 }
 
 // WithMaxIter sets the maximum number of iterations
 func WithMaxIter(maxIter int) Option {
 	return func(k *Kmeans) {
-		if maxIter > 0 {
-			k.MaxIter = maxIter
-		}
+		k.MaxIter = maxIter
 	}
 }
 
 // WithTol sets the tolerance for convergence
 func WithTol(tol float64) Option {
 	return func(k *Kmeans) {
-		if tol > 0 {
-			k.Tol = tol
-		}
+		k.Tol = tol
 	}
 }
 
@@ -152,13 +148,12 @@ func WithRandomSeed(seed int64) Option {
 // WithNCentroidsInitTrials sets the number of trials for centroid initialization (used in k-means++)
 func WithNCentroidsInitTrials(n int) Option {
 	return func(k *Kmeans) {
-		if n > 0 {
-			k.NCentroidsInitTrials = n
-		}
+		k.NCentroidsInitTrials = n
 	}
 }
 
-// Validate checks if the Kmeans configuration is valid
+// Validate checks if the Kmeans configuration is valid. Counts must be positive, and Tol must be
+// positive and finite.
 func (k *Kmeans) Validate() error {
 	if !k.initialized {
 		return ErrConfigNotInitialized
@@ -176,7 +171,7 @@ func (k *Kmeans) Validate() error {
 		return ErrInvalidMaxIter
 	}
 
-	if k.Tol <= 0 {
+	if k.Tol <= 0 || math.IsNaN(k.Tol) || math.IsInf(k.Tol, 0) {
 		return ErrInvalidTol
 	}
 

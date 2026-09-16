@@ -2590,6 +2590,136 @@ func TestWithRandomState(t *testing.T) {
 	require.Equal(t, randomState2, kmeans2.RandomState)
 }
 
+func TestInvalidIntegerFunctionalOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		option      Option
+		wantErr     error
+		assertValue func(*testing.T, *Kmeans)
+	}{
+		{
+			name:    "n_init zero",
+			option:  WithNInit(0),
+			wantErr: ErrInvalidNInit,
+			assertValue: func(t *testing.T, kmeans *Kmeans) {
+				require.Zero(t, kmeans.NInit)
+			},
+		},
+		{
+			name:    "n_init negative",
+			option:  WithNInit(-1),
+			wantErr: ErrInvalidNInit,
+			assertValue: func(t *testing.T, kmeans *Kmeans) {
+				require.Equal(t, -1, kmeans.NInit)
+			},
+		},
+		{
+			name:    "max_iter zero",
+			option:  WithMaxIter(0),
+			wantErr: ErrInvalidMaxIter,
+			assertValue: func(t *testing.T, kmeans *Kmeans) {
+				require.Zero(t, kmeans.MaxIter)
+			},
+		},
+		{
+			name:    "max_iter negative",
+			option:  WithMaxIter(-1),
+			wantErr: ErrInvalidMaxIter,
+			assertValue: func(t *testing.T, kmeans *Kmeans) {
+				require.Equal(t, -1, kmeans.MaxIter)
+			},
+		},
+		{
+			name:    "centroid initialization trials zero",
+			option:  WithNCentroidsInitTrials(0),
+			wantErr: ErrInvalidNCentroidsInitTrials,
+			assertValue: func(t *testing.T, kmeans *Kmeans) {
+				require.Zero(t, kmeans.NCentroidsInitTrials)
+			},
+		},
+		{
+			name:    "centroid initialization trials negative",
+			option:  WithNCentroidsInitTrials(-1),
+			wantErr: ErrInvalidNCentroidsInitTrials,
+			assertValue: func(t *testing.T, kmeans *Kmeans) {
+				require.Equal(t, -1, kmeans.NCentroidsInitTrials)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertInvalidOption(t, tt.option, tt.wantErr, tt.assertValue)
+		})
+	}
+}
+
+func TestInvalidTolOption(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		value       float64
+		assertValue func(*testing.T, float64)
+	}{
+		{name: "zero", value: 0, assertValue: func(t *testing.T, value float64) { require.Zero(t, value) }},
+		{name: "negative", value: -1, assertValue: func(t *testing.T, value float64) { require.Equal(t, -1.0, value) }},
+		{name: "NaN", value: math.NaN(), assertValue: func(t *testing.T, value float64) { require.True(t, math.IsNaN(value)) }},
+		{name: "positive infinity", value: math.Inf(1), assertValue: func(t *testing.T, value float64) { require.True(t, math.IsInf(value, 1)) }},
+		{name: "negative infinity", value: math.Inf(-1), assertValue: func(t *testing.T, value float64) { require.True(t, math.IsInf(value, -1)) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertInvalidOption(t, WithTol(tt.value), ErrInvalidTol, func(t *testing.T, kmeans *Kmeans) {
+				tt.assertValue(t, kmeans.Tol)
+			})
+		})
+	}
+}
+
+func assertInvalidOption(
+	t *testing.T,
+	option Option,
+	wantErr error,
+	assertValue func(*testing.T, *Kmeans),
+) {
+	t.Helper()
+
+	kmeans := NewWithOptions(2, option)
+	assertValue(t, kmeans)
+	require.ErrorIs(t, kmeans.Validate(), wantErr)
+
+	_, err := kmeans.Cluster([][]float64{{0}, {1}})
+	require.ErrorIs(t, err, wantErr)
+}
+
+func TestFunctionalOptionLastValueWins(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid value replaces invalid value", func(t *testing.T) {
+		t.Parallel()
+
+		kmeans := NewWithOptions(2, WithMaxIter(0), WithMaxIter(1))
+
+		require.Equal(t, 1, kmeans.MaxIter)
+		require.NoError(t, kmeans.Validate())
+	})
+
+	t.Run("invalid value replaces valid value", func(t *testing.T) {
+		t.Parallel()
+
+		kmeans := NewWithOptions(2, WithMaxIter(1), WithMaxIter(0))
+
+		require.Zero(t, kmeans.MaxIter)
+		require.ErrorIs(t, kmeans.Validate(), ErrInvalidMaxIter)
+	})
+}
+
 func TestCluster_ValidationErrors(t *testing.T) {
 	tests := []struct {
 		name    string

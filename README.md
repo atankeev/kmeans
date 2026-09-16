@@ -115,6 +115,11 @@ type Result struct {
 | `WithTol(tolerance)` | Set convergence tolerance | `1e-4` |
 | `WithRandomSeed(seed)` | Set random seed | Random |
 | `WithNInit(nInit)` | Set number of initializations | `10` |
+| `WithNCentroidsInitTrials(trials)` | Set number of k-means++ initialization trials | `2 + log(nClusters)` |
+
+Configuration options always retain the value supplied by the caller. Call `Validate()` to check
+configuration eagerly, or handle the validation error returned by `Cluster()`. Counts must be
+positive, and the convergence tolerance must be positive and finite.
 
 ### Algorithm
 
@@ -194,6 +199,8 @@ if err != nil {
         log.Fatal("Empty dataset provided")
     case errors.Is(err, kmeans.ErrInvalidK):
         log.Fatal("Invalid number of clusters")
+    case errors.Is(err, kmeans.ErrInvalidTol):
+        log.Fatal("Tolerance must be positive and finite")
     case errors.Is(err, kmeans.ErrNonFiniteData):
         log.Fatal("Dataset contains a NaN or infinite coordinate")
     default:
