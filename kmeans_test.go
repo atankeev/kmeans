@@ -1539,98 +1539,79 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 }
 
-// Unit tests for pointsEqual
-func TestPointsEqual(t *testing.T) {
+func TestCalculateTolerance(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name      string
-		p1, p2    []float64
-		tolerance float64
-		want      bool
+		name              string
+		data              [][]float64
+		relativeTolerance float64
+		want              float64
 	}{
 		{
-			name:      "Equal points, tolerance 0",
-			p1:        []float64{1.0, 2.0},
-			p2:        []float64{1.0, 2.0},
-			tolerance: 0.0,
-			want:      true,
+			name:              "single feature",
+			data:              [][]float64{{0}, {2}},
+			relativeTolerance: 0.1,
+			want:              0.1,
 		},
 		{
-			name:      "Equal points, tolerance > 0",
-			p1:        []float64{1.0, 2.0},
-			p2:        []float64{1.0, 2.0},
-			tolerance: 0.1,
-			want:      true,
+			name:              "mean variance across features",
+			data:              [][]float64{{0, 0}, {2, 4}},
+			relativeTolerance: 0.2,
+			want:              0.5,
 		},
 		{
-			name:      "Points differ less than tolerance",
-			p1:        []float64{1.0, 2.0},
-			p2:        []float64{1.0, 2.05},
-			tolerance: 0.1,
-			want:      true,
-		},
-		{
-			name:      "Points differ exactly tolerance",
-			p1:        []float64{1.0, 2.09},
-			p2:        []float64{1.0, 2.0},
-			tolerance: 0.09,
-			want:      true,
-		},
-		{
-			name:      "Points differ more than tolerance",
-			p1:        []float64{1.0, 2.0},
-			p2:        []float64{1.0, 2.2},
-			tolerance: 0.1,
-			want:      false,
-		},
-		{
-			name:      "Different lengths",
-			p1:        []float64{1.0, 2.0},
-			p2:        []float64{1.0},
-			tolerance: 0.1,
-			want:      false,
-		},
-		{
-			name:      "Both empty",
-			p1:        []float64{},
-			p2:        []float64{},
-			tolerance: 0.1,
-			want:      true,
-		},
-		{
-			name:      "One empty, one not",
-			p1:        []float64{},
-			p2:        []float64{0.0},
-			tolerance: 0.1,
-			want:      false,
-		},
-		{
-			name:      "Negative values, within tolerance",
-			p1:        []float64{-1.0, -2.0},
-			p2:        []float64{-1.0, -2.05},
-			tolerance: 0.1,
-			want:      true,
-		},
-		{
-			name:      "Negative values, outside tolerance",
-			p1:        []float64{-1.0, -2.0},
-			p2:        []float64{-1.0, -2.2},
-			tolerance: 0.1,
-			want:      false,
+			name:              "zero variance",
+			data:              [][]float64{{3, -2}, {3, -2}},
+			relativeTolerance: 0.1,
+			want:              0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := pointsEqual(tt.p1, tt.p2, tt.tolerance)
-			if got != tt.want {
-				t.Errorf("pointsEqual(%v, %v, %v) = %v; want %v", tt.p1, tt.p2, tt.tolerance, got, tt.want)
-			}
+			t.Parallel()
+			require.InDelta(t, tt.want, calculateTolerance(tt.data, tt.relativeTolerance), 1e-12)
 		})
 	}
 }
 
-// Unit tests for checkConvergence
+func TestCalculateTolerance_Invariance(t *testing.T) {
+	t.Parallel()
+
+	data := [][]float64{{-2, 1}, {0, 4}, {5, 9}}
+	translated := [][]float64{{98, -49}, {100, -46}, {105, -41}}
+	scaled := [][]float64{{-20, 10}, {0, 40}, {50, 90}}
+
+	tolerance := calculateTolerance(data, 1e-4)
+	require.InDelta(t, tolerance, calculateTolerance(translated, 1e-4), 1e-15)
+	require.InDelta(t, tolerance*100, calculateTolerance(scaled, 1e-4), 1e-15)
+}
+
+func TestConvergenceScaleInvariance(t *testing.T) {
+	t.Parallel()
+
+	data := [][]float64{{0, 0}, {2, 4}}
+	oldCenters := [][]float64{{0, 0}}
+	newCenters := [][]float64{{0.1, 0.2}}
+	scaledData := [][]float64{{0, 0}, {20, 40}}
+	scaledOldCenters := [][]float64{{0, 0}}
+	scaledNewCenters := [][]float64{{1, 2}}
+
+	converged := checkConvergence(oldCenters, newCenters, calculateTolerance(data, 0.1))
+	scaledConverged := checkConvergence(
+		scaledOldCenters,
+		scaledNewCenters,
+		calculateTolerance(scaledData, 0.1),
+	)
+
+	require.True(t, converged)
+	require.Equal(t, converged, scaledConverged)
+}
+
 func TestCheckConvergence(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		oldCenters [][]float64
@@ -1639,38 +1620,31 @@ func TestCheckConvergence(t *testing.T) {
 		want       bool
 	}{
 		{
-			name:       "Identical centers, tolerance 0",
-			oldCenters: [][]float64{{1, 2}, {3, 4}},
-			newCenters: [][]float64{{1, 2}, {3, 4}},
-			tolerance:  0.0,
+			name:       "identical zero-valued centers with zero tolerance",
+			oldCenters: [][]float64{{0, 0}, {0, 0}},
+			newCenters: [][]float64{{0, 0}, {0, 0}},
+			tolerance:  0,
 			want:       true,
 		},
 		{
-			name:       "Identical centers, tolerance > 0",
-			oldCenters: [][]float64{{1, 2}, {3, 4}},
-			newCenters: [][]float64{{1, 2}, {3, 4}},
-			tolerance:  0.1,
+			name:       "multidimensional shift below tolerance",
+			oldCenters: [][]float64{{0, 0}},
+			newCenters: [][]float64{{0.3, 0.39}},
+			tolerance:  0.25,
 			want:       true,
 		},
 		{
-			name:       "One center differs less than tolerance",
-			oldCenters: [][]float64{{1, 2}, {3, 4}},
-			newCenters: [][]float64{{1, 2.05}, {3, 4}},
-			tolerance:  0.1,
+			name:       "multidimensional shift exactly at tolerance",
+			oldCenters: [][]float64{{0, 0}},
+			newCenters: [][]float64{{0.3, 0.4}},
+			tolerance:  0.25,
 			want:       true,
 		},
 		{
-			name:       "One center differs exactly tolerance",
-			oldCenters: [][]float64{{1, 2}, {3, 4}},
-			newCenters: [][]float64{{1, 2.09}, {3, 4}},
-			tolerance:  0.09,
-			want:       true,
-		},
-		{
-			name:       "One center differs more than tolerance",
-			oldCenters: [][]float64{{1, 2}, {3, 4}},
-			newCenters: [][]float64{{1, 2.2}, {3, 4}},
-			tolerance:  0.1,
+			name:       "multidimensional shift above tolerance",
+			oldCenters: [][]float64{{0, 0}},
+			newCenters: [][]float64{{0.3, 0.41}},
+			tolerance:  0.25,
 			want:       false,
 		},
 		{
@@ -1681,30 +1655,9 @@ func TestCheckConvergence(t *testing.T) {
 			want:       false,
 		},
 		{
-			name:       "Both empty",
-			oldCenters: [][]float64{},
-			newCenters: [][]float64{},
-			tolerance:  0.1,
-			want:       true,
-		},
-		{
-			name:       "One empty, one not",
-			oldCenters: [][]float64{},
-			newCenters: [][]float64{{0, 0}},
-			tolerance:  0.1,
-			want:       false,
-		},
-		{
-			name:       "Negative values, within tolerance",
-			oldCenters: [][]float64{{-1, -2}, {3, 4}},
-			newCenters: [][]float64{{-1, -2.05}, {3, 4}},
-			tolerance:  0.1,
-			want:       true,
-		},
-		{
-			name:       "Negative values, outside tolerance",
-			oldCenters: [][]float64{{-1, -2}, {3, 4}},
-			newCenters: [][]float64{{-1, -2.2}, {3, 4}},
+			name:       "different center dimensions",
+			oldCenters: [][]float64{{1, 2}},
+			newCenters: [][]float64{{1}},
 			tolerance:  0.1,
 			want:       false,
 		},
@@ -1712,10 +1665,8 @@ func TestCheckConvergence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := checkConvergence(tt.oldCenters, tt.newCenters, tt.tolerance)
-			if got != tt.want {
-				t.Errorf("checkConvergence(%v, %v, %v) = %v; want %v", tt.oldCenters, tt.newCenters, tt.tolerance, got, tt.want)
-			}
+			t.Parallel()
+			require.Equal(t, tt.want, checkConvergence(tt.oldCenters, tt.newCenters, tt.tolerance))
 		})
 	}
 }

@@ -115,7 +115,7 @@ type Result struct {
 |--------|-------------|---------|
 | `WithInitMethod(method)` | Set initialization method | `InitKMeansPlusPlus` |
 | `WithMaxIter(iterations)` | Set maximum iterations | `300` |
-| `WithTol(tolerance)` | Set convergence tolerance | `1e-4` |
+| `WithTol(tolerance)` | Set relative convergence tolerance | `1e-4` |
 | `WithRandomSeed(seed)` | Set random seed | Random |
 | `WithNInit(nInit)` | Set number of initializations | `10` |
 | `WithNCentroidsInitTrials(trials)` | Set number of k-means++ initialization trials | `2 + log(nClusters)` |
@@ -129,7 +129,7 @@ positive, and the convergence tolerance must be positive and finite.
 #### Lloyd's Algorithm
 - **Description**: Standard K-means algorithm
 - **Empty clusters**: Relocated to distinct samples with the largest current assignment error; ties use sample order
-- **Stopping behavior**: Each initialization stops when its centroids satisfy `Tol` or after `MaxIter` updates. The lowest-inertia run is selected. If that run reaches `MaxIter` without convergence, `Cluster` returns its final result together with `ErrConvergenceFailed`.
+- **Stopping behavior**: For each `Cluster` call, the effective tolerance is `Tol * mean(var(data, axis=0))`, using population variance. Each initialization stops when assignments are unchanged between consecutive iterations or when the squared Frobenius norm `sum((newCenters - oldCenters)^2)` is at most the effective tolerance. A zero-variance dataset therefore requires zero center movement unless assignments are unchanged. The lowest-inertia run is selected. If that run reaches `MaxIter` without convergence, `Cluster` returns its final result together with `ErrConvergenceFailed`.
 - **Best for**: General purpose clustering
 - **Time Complexity**: O(n*k*i*d) where n=points, k=clusters, i=iterations, d=dimensions
 

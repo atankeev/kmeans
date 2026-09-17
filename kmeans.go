@@ -19,9 +19,9 @@ const (
 	// for a single run before declaring convergence
 	DefaultMaxIter = 300
 
-	// DefaultTol is the default relative tolerance with regards to Frobenius norm
-	// of the difference in the cluster centers of two consecutive iterations
-	// to declare convergence
+	// DefaultTol is the default relative tolerance used to scale the mean
+	// per-feature variance of the input data. Convergence is declared when the
+	// squared Frobenius norm of the center shift does not exceed that threshold.
 	DefaultTol = 1e-4
 )
 
@@ -60,8 +60,9 @@ type Kmeans struct {
 	// Maximum number of iterations of the k-means algorithm for a single run
 	MaxIter int
 
-	// Relative tolerance with regards to Frobenius norm of the difference in the cluster centers
-	// of two consecutive iterations to declare convergence
+	// Relative tolerance used to scale the mean per-feature variance of the input
+	// data. The resulting threshold is compared with the squared Frobenius norm
+	// of the center shift between consecutive iterations.
 	Tol float64
 
 	// Method for initialization: "k-means++" (default), "random"
@@ -121,7 +122,8 @@ func WithMaxIter(maxIter int) Option {
 	}
 }
 
-// WithTol sets the tolerance for convergence
+// WithTol sets the relative tolerance for convergence. The tolerance is scaled by
+// the mean per-feature variance of the input data before clustering starts.
 func WithTol(tol float64) Option {
 	return func(k *Kmeans) {
 		k.Tol = tol
@@ -206,9 +208,11 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	}
 
 	labels := make([]int, len(data))
+	previousLabels := make([]int, len(data))
 	// Scratch buffer reused by initialization and empty-cluster recovery.
 	distances := make([]float64, len(data))
 	randomState := k.newRandomState()
+	tolerance := calculateTolerance(data, k.Tol)
 	var (
 		bestResult    *Result
 		bestLabels    []int
@@ -217,7 +221,14 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 
 	// Run the clustering algorithm multiple times and return the best result
 	for range k.NInit {
-		result, converged := k.lloydKMeans(data, labels, distances, randomState)
+		result, converged := k.lloydKMeans(
+			data,
+			labels,
+			previousLabels,
+			distances,
+			randomState,
+			tolerance,
+		)
 		if bestResult == nil || result.Inertia < bestResult.Inertia {
 			bestResult = result
 			bestLabels = append(bestLabels[:0], labels...)
@@ -428,8 +439,16 @@ func (k *Kmeans) initCentroidsWithDistances(
 //	A pointer to Result containing final centroids, labels, and inertia.
 func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 	labels := make([]int, len(data))
+	previousLabels := make([]int, len(data))
 	distances := make([]float64, len(data))
-	result, _ := k.lloydKMeans(data, labels, distances, k.newRandomState())
+	result, _ := k.lloydKMeans(
+		data,
+		labels,
+		previousLabels,
+		distances,
+		k.newRandomState(),
+		calculateTolerance(data, k.Tol),
+	)
 
 	return result
 }
@@ -451,8 +470,10 @@ func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 func (k *Kmeans) lloydKMeans(
 	data [][]float64,
 	labels []int,
+	previousLabels []int,
 	distances []float64,
 	randomState *rand.Rand,
+	tolerance float64,
 ) (*Result, bool) {
 	centers := k.initCentroidsWithDistances(data, distances, randomState)
 	clear(labels)
@@ -460,6 +481,7 @@ func (k *Kmeans) lloydKMeans(
 	dim := len(data[0])
 	next := newCenterBuffer(k.NClusters, dim)
 	counts := make([]int, k.NClusters)
+	hasPreviousLabels := false
 	converged := false
 
 	for range k.MaxIter {
@@ -473,8 +495,10 @@ func (k *Kmeans) lloydKMeans(
 		clear(counts)
 		k.updateCentersLloydInto(next, counts, distances, data, labels, centers)
 
-		// Check for convergence against the previous centers before replacing them
-		converged = checkConvergence(centers, next, k.Tol)
+		// As in sklearn, unchanged assignments take precedence over the
+		// tolerance-based squared Frobenius norm check.
+		labelsUnchanged := hasPreviousLabels && slices.Equal(labels, previousLabels)
+		converged = labelsUnchanged || checkConvergence(centers, next, tolerance)
 
 		// Swap buffers: the just-computed centers become the current ones for the next iteration
 		centers, next = next, centers
@@ -482,6 +506,9 @@ func (k *Kmeans) lloydKMeans(
 		if converged {
 			break
 		}
+
+		copy(previousLabels, labels)
+		hasPreviousLabels = true
 	}
 
 	// Assign points to clusters again to ensure final assignments
@@ -799,52 +826,53 @@ func selectUniqueIndex(weights []float64, usedIndices map[int]struct{}, rng *ran
 	}
 }
 
-// pointsEqual compares two points (slices of float64) and returns true if they are equal within a given tolerance.
-//
-// Parameters:
-//
-//	p1:        The first point, represented as a slice of float64.
-//	p2:        The second point, represented as a slice of float64.
-//	tolerance: The maximum allowed absolute difference between corresponding coordinates for the points to be considered equal.
-//
-// Returns:
-//
-//	true if the points are of equal length and each corresponding coordinate differs by no more than the specified tolerance; false otherwise.
-func pointsEqual(p1, p2 []float64, tolerance float64) bool {
-	if len(p1) != len(p2) {
-		return false
-	}
-
-	for i := range p1 {
-		if math.Abs(p1[i]-p2[i]) > tolerance {
-			return false
+// calculateTolerance converts a relative tolerance into the data-dependent
+// threshold used by sklearn: relativeTolerance multiplied by the mean population
+// variance across features.
+func calculateTolerance(data [][]float64, relativeTolerance float64) float64 {
+	dim := len(data[0])
+	means := make([]float64, dim)
+	for _, point := range data {
+		for feature, value := range point {
+			means[feature] += value
 		}
 	}
 
-	return true
+	sampleCount := float64(len(data))
+	for feature := range means {
+		means[feature] /= sampleCount
+	}
+
+	var varianceSum float64
+	for _, point := range data {
+		for feature, value := range point {
+			difference := value - means[feature]
+			varianceSum += difference * difference
+		}
+	}
+
+	meanVariance := varianceSum / (sampleCount * float64(dim))
+	return meanVariance * relativeTolerance
 }
 
-// checkConvergence determines whether the cluster centers have converged by comparing the old and new centers.
-//
-// Parameters:
-//
-//	oldCenters: A slice of previous cluster centers, where each center is a slice of float64 features.
-//	newCenters: A slice of updated cluster centers, where each center is a slice of float64 features.
-//	tolerance:  The maximum allowed absolute difference between corresponding coordinates for centers to be considered equal.
-//
-// Returns:
-//
-//	true if all corresponding centers are equal within the specified tolerance; false otherwise.
+// checkConvergence reports whether the squared Frobenius norm of the center
+// shift is at or below the data-dependent tolerance.
 func checkConvergence(oldCenters, newCenters [][]float64, tolerance float64) bool {
 	if len(oldCenters) != len(newCenters) {
 		return false
 	}
 
+	var centerShift float64
 	for i := range oldCenters {
-		if !pointsEqual(oldCenters[i], newCenters[i], tolerance) {
+		if len(oldCenters[i]) != len(newCenters[i]) {
 			return false
+		}
+
+		for feature := range oldCenters[i] {
+			difference := newCenters[i][feature] - oldCenters[i][feature]
+			centerShift += difference * difference
 		}
 	}
 
-	return true
+	return centerShift <= tolerance
 }
