@@ -93,7 +93,7 @@ type Kmeans struct {
     MaxIter              int           // Maximum iterations
     Tol                  float64       // Convergence tolerance
     Init                 InitMethod    // Initialization method
-    RandomState          *rand.Rand    // Random state
+    RandomSeed           int64         // Random seed used by each call
     NCentroidsInitTrials int           // K-means++ trials
 }
 ```
@@ -182,7 +182,17 @@ kmeans := kmeans.NewWithOptions(3,
 result, err := kmeans.Cluster(data)
 ```
 
-Using the same seed and options produces reproducible initialization and empty-cluster recovery.
+Using the same seed, options, and data produces the same result on every call, including
+concurrent calls on the same `Kmeans` instance.
+
+### Concurrency
+
+`Cluster` can be called concurrently on the same `Kmeans` instance. Each call creates an
+independent random state from `RandomSeed`, so clustering work is not serialized and seeded
+results do not depend on goroutine scheduling.
+
+Treat the instance configuration and input data as read-only while `Cluster` is running.
+Concurrent mutation of exported configuration fields or input slices is not supported.
 
 ## Performance Tips
 

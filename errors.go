@@ -10,11 +10,10 @@ var (
 	ErrInvalidMaxIter              = errors.New("max_iter must be positive")
 	ErrInvalidTol                  = errors.New("tol must be positive and finite")
 	// ErrInvalidInitMethod indicates that the configured centroid initialization method is unsupported.
-	ErrInvalidInitMethod  = errors.New("invalid initialization method")
-	ErrInvalidRandomState = errors.New("random_state cannot be nil")
-	ErrInvalidK           = errors.New("k must be positive and less than number of samples")
-	ErrEmptyData          = errors.New("data cannot be empty")
-	ErrInvalidData        = errors.New("data must be a 2D slice")
+	ErrInvalidInitMethod = errors.New("invalid initialization method")
+	ErrInvalidK          = errors.New("k must be positive and less than number of samples")
+	ErrEmptyData         = errors.New("data cannot be empty")
+	ErrInvalidData       = errors.New("data must be a 2D slice")
 	// ErrNoFeatures indicates that samples contain no features.
 	ErrNoFeatures = errors.New("data must contain at least one feature")
 	// ErrNonFiniteData indicates that a coordinate is NaN or infinite.

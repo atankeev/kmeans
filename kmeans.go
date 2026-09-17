@@ -45,7 +45,11 @@ type Result struct {
 	Inertia float64
 }
 
-// Kmeans represents a K-means clustering algorithm instance
+// Kmeans represents a K-means clustering algorithm instance.
+//
+// Cluster may be called concurrently on the same instance. Callers must not mutate the
+// Kmeans configuration or input data while a call is in progress. Each call creates its own
+// random state from RandomSeed, so equal configuration, seed, and data produce equal results.
 type Kmeans struct {
 	// Number of clusters (required parameter, no default)
 	NClusters int
@@ -63,8 +67,8 @@ type Kmeans struct {
 	// Method for initialization: "k-means++" (default), "random"
 	Init InitMethod
 
-	// Random state for reproducible results
-	RandomState *rand.Rand
+	// Random seed for reproducible results
+	RandomSeed int64
 
 	// Number of trials for k-means++ initialization
 	NCentroidsInitTrials int
@@ -85,7 +89,7 @@ func New(nClusters int) *Kmeans {
 		Tol:                  DefaultTol,
 		Init:                 InitKMeansPlusPlus,
 		NCentroidsInitTrials: int(2 + math.Log(float64(nClusters))),
-		RandomState:          rand.New(rand.NewSource(time.Now().UnixNano())),
+		RandomSeed:           time.Now().UnixNano(),
 		initialized:          true,
 	}
 }
@@ -131,17 +135,10 @@ func WithInitMethod(init InitMethod) Option {
 	}
 }
 
-// WithRandomState sets the random state for reproducible results
-func WithRandomState(randomState *rand.Rand) Option {
-	return func(k *Kmeans) {
-		k.RandomState = randomState
-	}
-}
-
-// WithRandomSeed sets the random seed (creates new random state)
+// WithRandomSeed sets the random seed used by each clustering call.
 func WithRandomSeed(seed int64) Option {
 	return func(k *Kmeans) {
-		k.RandomState = rand.New(rand.NewSource(seed))
+		k.RandomSeed = seed
 	}
 }
 
@@ -185,14 +182,14 @@ func (k *Kmeans) Validate() error {
 		return ErrInvalidNCentroidsInitTrials
 	}
 
-	if k.RandomState == nil {
-		return ErrInvalidRandomState
-	}
-
 	return nil
 }
 
 // Cluster performs K-means clustering on the given data.
+//
+// Cluster is safe to call concurrently on the same Kmeans instance, provided callers do not
+// mutate the instance or data during a call. Each invocation starts with RandomSeed and does
+// not share random state with other invocations.
 //
 // If the selected lowest-inertia run does not converge within MaxIter, Cluster returns
 // its final result together with ErrConvergenceFailed. For configuration and data errors,
@@ -211,6 +208,7 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	labels := make([]int, len(data))
 	// Scratch buffer reused by initialization and empty-cluster recovery.
 	distances := make([]float64, len(data))
+	randomState := k.newRandomState()
 	var (
 		bestResult    *Result
 		bestLabels    []int
@@ -219,7 +217,7 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 
 	// Run the clustering algorithm multiple times and return the best result
 	for range k.NInit {
-		result, converged := k.lloydKMeans(data, labels, distances)
+		result, converged := k.lloydKMeans(data, labels, distances, randomState)
 		if bestResult == nil || result.Inertia < bestResult.Inertia {
 			bestResult = result
 			bestLabels = append(bestLabels[:0], labels...)
@@ -233,6 +231,10 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	}
 
 	return bestResult, nil
+}
+
+func (k *Kmeans) newRandomState() *rand.Rand {
+	return rand.New(rand.NewSource(k.RandomSeed))
 }
 
 // validateData validates the input data.
@@ -280,12 +282,12 @@ func (k *Kmeans) validateData(data [][]float64) error {
 }
 
 // initRandomCentroids initializes cluster centroids by randomly selecting data points
-func (k *Kmeans) initRandomCentroids(data [][]float64) [][]float64 {
+func (k *Kmeans) initRandomCentroids(data [][]float64, randomState *rand.Rand) [][]float64 {
 	centroids := make([][]float64, 0, k.NClusters)
 	usedIndices := make(map[int]struct{})
 
 	for len(centroids) < k.NClusters {
-		randomIndex := k.RandomState.Intn(len(data))
+		randomIndex := randomState.Intn(len(data))
 		if _, ok := usedIndices[randomIndex]; !ok {
 			centroid := make([]float64, len(data[randomIndex]))
 			copy(centroid, data[randomIndex])
@@ -303,13 +305,17 @@ func (k *Kmeans) initRandomCentroids(data [][]float64) [][]float64 {
 // from existing centroids, ensuring better initial placement than random selection.
 // The algorithm guarantees that no duplicate data points are selected as centroids.
 func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
-	return k.initKMeansPlusPlusCentroidsWithDistances(data, make([]float64, len(data)))
+	return k.initKMeansPlusPlusCentroidsWithDistances(data, make([]float64, len(data)), k.newRandomState())
 }
 
 // initKMeansPlusPlusCentroidsWithDistances initializes cluster centroids using the k-means++
 // algorithm, reusing a caller-provided distances buffer (allocated once per Cluster call).
 // The buffer must have len(data) capacity; it is re-initialized per run.
-func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(data [][]float64, distances []float64) [][]float64 {
+func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
+	data [][]float64,
+	distances []float64,
+	randomState *rand.Rand,
+) [][]float64 {
 	nLocalTrials := k.NCentroidsInitTrials
 
 	centroids := make([][]float64, 0, k.NClusters)
@@ -335,14 +341,14 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(data [][]float64, dist
 	}
 
 	// Select first centroid randomly
-	addCentroid(k.RandomState.Intn(len(data)))
+	addCentroid(randomState.Intn(len(data)))
 
 	// Select remaining centroids
 	for len(centroids) < k.NClusters {
 		// When nLocalTrials <= 1, use standard k-means++ initialization
 		if nLocalTrials <= 1 {
 			// Select next centroid with probability proportional to squared distance
-			addCentroid(selectUniqueIndex(distances, usedIndices, k.RandomState))
+			addCentroid(selectUniqueIndex(distances, usedIndices, randomState))
 		} else {
 			// Use greedy k-means++ initialization with nLocalTrials
 			bestCentroidIdx := -1
@@ -350,7 +356,7 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(data [][]float64, dist
 
 			for range nLocalTrials {
 				// Select candidate centroid with probability proportional to squared distance
-				candidateIdx := selectUniqueIndex(distances, usedIndices, k.RandomState)
+				candidateIdx := selectUniqueIndex(distances, usedIndices, randomState)
 
 				// Calculate the inertia with this candidate without materializing the
 				// candidate as a centroid: min(existing distance, distance to candidate)
@@ -368,7 +374,7 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(data [][]float64, dist
 				addCentroid(bestCentroidIdx)
 			} else {
 				// Fallback: select a random unused data point as centroid
-				addCentroid(selectUniqueIndex(distances, usedIndices, k.RandomState))
+				addCentroid(selectUniqueIndex(distances, usedIndices, randomState))
 			}
 		}
 	}
@@ -389,18 +395,22 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(data [][]float64, dist
 //
 //	A slice of new cluster centers, where each center is a slice of float64.
 func (k *Kmeans) initCentroids(data [][]float64) [][]float64 {
-	return k.initCentroidsWithDistances(data, make([]float64, len(data)))
+	return k.initCentroidsWithDistances(data, make([]float64, len(data)), k.newRandomState())
 }
 
 // initCentroidsWithDistances initializes the cluster centroids using the selected initialization
 // method, reusing a caller-provided distances buffer for the k-means++ method. The buffer is
 // ignored by initialization methods that do not need it.
-func (k *Kmeans) initCentroidsWithDistances(data [][]float64, distances []float64) [][]float64 {
+func (k *Kmeans) initCentroidsWithDistances(
+	data [][]float64,
+	distances []float64,
+	randomState *rand.Rand,
+) [][]float64 {
 	switch k.Init {
 	case InitRandom:
-		return k.initRandomCentroids(data)
+		return k.initRandomCentroids(data, randomState)
 	default:
-		return k.initKMeansPlusPlusCentroidsWithDistances(data, distances)
+		return k.initKMeansPlusPlusCentroidsWithDistances(data, distances, randomState)
 	}
 }
 
@@ -419,7 +429,7 @@ func (k *Kmeans) initCentroidsWithDistances(data [][]float64, distances []float6
 func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 	labels := make([]int, len(data))
 	distances := make([]float64, len(data))
-	result, _ := k.lloydKMeans(data, labels, distances)
+	result, _ := k.lloydKMeans(data, labels, distances, k.newRandomState())
 
 	return result
 }
@@ -438,8 +448,13 @@ func (k *Kmeans) clusterSingle(data [][]float64) *Result {
 // Returns:
 //
 //	A pointer to Result containing final centroids, labels, and inertia, and whether the run converged.
-func (k *Kmeans) lloydKMeans(data [][]float64, labels []int, distances []float64) (*Result, bool) {
-	centers := k.initCentroidsWithDistances(data, distances)
+func (k *Kmeans) lloydKMeans(
+	data [][]float64,
+	labels []int,
+	distances []float64,
+	randomState *rand.Rand,
+) (*Result, bool) {
+	centers := k.initCentroidsWithDistances(data, distances, randomState)
 	clear(labels)
 
 	dim := len(data[0])

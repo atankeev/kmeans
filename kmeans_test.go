@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,7 @@ func TestKmeans_InitRandomCentroids(t *testing.T) {
 			kmeans := NewWithOptions(tt.nClusters, WithRandomSeed(tt.randomSeed))
 
 			// Call the method
-			centroids := kmeans.initRandomCentroids(tt.data)
+			centroids := kmeans.initRandomCentroids(tt.data, rand.New(rand.NewSource(tt.randomSeed)))
 
 			// Verify the number of centroids
 			if len(centroids) != tt.nClusters {
@@ -120,8 +121,8 @@ func TestKmeans_InitRandomCentroids_DifferentSeeds(t *testing.T) {
 	kmeans1 := NewWithOptions(2, WithRandomSeed(42))
 	kmeans2 := NewWithOptions(2, WithRandomSeed(123))
 
-	centroids1 := kmeans1.initRandomCentroids(data)
-	centroids2 := kmeans2.initRandomCentroids(data)
+	centroids1 := kmeans1.initRandomCentroids(data, rand.New(rand.NewSource(42)))
+	centroids2 := kmeans2.initRandomCentroids(data, rand.New(rand.NewSource(123)))
 
 	// Check that results are different (this is probabilistic)
 	centroids1Str := sliceToString(centroids1[0]) + "|" + sliceToString(centroids1[1])
@@ -138,7 +139,7 @@ func TestKmeans_InitRandomCentroids_EdgeCases(t *testing.T) {
 		data := [][]float64{{1.0, 2.0, 3.0}}
 		kmeans := NewWithOptions(1, WithRandomSeed(42))
 
-		centroids := kmeans.initRandomCentroids(data)
+		centroids := kmeans.initRandomCentroids(data, rand.New(rand.NewSource(42)))
 
 		if len(centroids) != 1 {
 			t.Errorf("expected 1 centroid, got %d", len(centroids))
@@ -157,7 +158,7 @@ func TestKmeans_InitRandomCentroids_EdgeCases(t *testing.T) {
 		kmeans := NewWithOptions(1, WithRandomSeed(42))
 
 		// This should handle the case gracefully
-		centroids := kmeans.initRandomCentroids(data)
+		centroids := kmeans.initRandomCentroids(data, rand.New(rand.NewSource(42)))
 
 		if len(centroids) != 1 {
 			t.Errorf("expected 1 centroid, got %d", len(centroids))
@@ -2094,6 +2095,49 @@ func TestCluster_Lloyd_Basic(t *testing.T) {
 	require.Equal(t, result.Labels[2], result.Labels[3])
 }
 
+func TestCluster_ConcurrentCallsAreReproducible(t *testing.T) {
+	t.Parallel()
+
+	data := [][]float64{
+		{0, 0}, {0, 1}, {1, 0},
+		{8, 8}, {8, 9}, {9, 8},
+		{16, 0}, {16, 1}, {17, 0},
+	}
+	kmeans := NewWithOptions(3, WithRandomSeed(42), WithNInit(1))
+
+	want, err := kmeans.Cluster(data)
+	require.NoError(t, err)
+
+	const callCount = 16
+	type outcome struct {
+		result *Result
+		err    error
+	}
+
+	start := make(chan struct{})
+	outcomes := make(chan outcome, callCount)
+	var wg sync.WaitGroup
+	wg.Add(callCount)
+	for range callCount {
+		go func() {
+			defer wg.Done()
+			<-start
+
+			result, clusterErr := kmeans.Cluster(data)
+			outcomes <- outcome{result: result, err: clusterErr}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(outcomes)
+
+	for outcome := range outcomes {
+		require.NoError(t, outcome.err)
+		require.Equal(t, want, outcome.result)
+	}
+}
+
 func TestCluster_Lloyd_KMeansPlusPlusInit(t *testing.T) {
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
@@ -2638,17 +2682,14 @@ func BenchmarkLloyd_VaryingDataSize(b *testing.B) {
 	}
 }
 
-func TestWithRandomState(t *testing.T) {
-	randomState := rand.New(rand.NewSource(42))
+func TestWithRandomSeed(t *testing.T) {
+	t.Parallel()
 
-	kmeans := NewWithOptions(2, WithRandomState(randomState))
+	kmeans := NewWithOptions(2, WithRandomSeed(42))
+	require.Equal(t, int64(42), kmeans.RandomSeed)
 
-	require.Equal(t, randomState, kmeans.RandomState)
-
-	randomState2 := rand.New(rand.NewSource(100))
-	kmeans2 := NewWithOptions(2, WithRandomState(randomState2))
-
-	require.Equal(t, randomState2, kmeans2.RandomState)
+	kmeans = NewWithOptions(2, WithRandomSeed(0))
+	require.Zero(t, kmeans.RandomSeed)
 }
 
 func TestInvalidIntegerFunctionalOptions(t *testing.T) {
@@ -2861,7 +2902,7 @@ func TestValidate_NInit(t *testing.T) {
 		MaxIter:              100,
 		Tol:                  1e-4,
 		NCentroidsInitTrials: 5,
-		RandomState:          rand.New(rand.NewSource(42)),
+		RandomSeed:           42,
 		initialized:          true,
 	}
 
@@ -2876,7 +2917,7 @@ func TestValidate_MaxIter(t *testing.T) {
 		MaxIter:              0,
 		Tol:                  1e-4,
 		NCentroidsInitTrials: 5,
-		RandomState:          rand.New(rand.NewSource(42)),
+		RandomSeed:           42,
 		initialized:          true,
 	}
 
@@ -2891,7 +2932,7 @@ func TestValidate_Tol(t *testing.T) {
 		MaxIter:              100,
 		Tol:                  0,
 		NCentroidsInitTrials: 5,
-		RandomState:          rand.New(rand.NewSource(42)),
+		RandomSeed:           42,
 		initialized:          true,
 	}
 
@@ -2906,22 +2947,7 @@ func TestValidate_NCentroidsInitTrials(t *testing.T) {
 		MaxIter:              100,
 		Tol:                  1e-4,
 		NCentroidsInitTrials: 0,
-		RandomState:          rand.New(rand.NewSource(42)),
-		initialized:          true,
-	}
-
-	err := k.Validate()
-	require.Error(t, err)
-}
-
-func TestValidate_RandomState(t *testing.T) {
-	k := &Kmeans{
-		NClusters:            2,
-		NInit:                1,
-		MaxIter:              100,
-		Tol:                  1e-4,
-		NCentroidsInitTrials: 5,
-		RandomState:          nil,
+		RandomSeed:           42,
 		initialized:          true,
 	}
 
