@@ -58,6 +58,9 @@ func main() {
 }
 ```
 
+`Cluster` requires a dataset with at least one sample and at least one feature per sample.
+All samples must have the same number of features.
+
 ## Advanced Usage
 
 ### Custom Configuration
@@ -201,6 +204,8 @@ if errors.Is(err, kmeans.ErrConvergenceFailed) {
     switch {
     case errors.Is(err, kmeans.ErrEmptyData):
         log.Fatal("Empty dataset provided")
+    case errors.Is(err, kmeans.ErrNoFeatures):
+        log.Fatal("Dataset samples must contain at least one feature")
     case errors.Is(err, kmeans.ErrInvalidK):
         log.Fatal("Invalid number of clusters")
     case errors.Is(err, kmeans.ErrInvalidTol):

@@ -268,6 +268,10 @@ func (k *Kmeans) validateData(data [][]float64) error {
 		}
 	}
 
+	if expectedDim == 0 {
+		return ErrNoFeatures
+	}
+
 	if k.NClusters > len(data) {
 		return fmt.Errorf("number of clusters (%d) cannot be greater than number of samples (%d)", k.NClusters, len(data))
 	}

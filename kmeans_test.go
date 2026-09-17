@@ -2417,6 +2417,41 @@ func TestCluster_Lloyd_NonFiniteValues(t *testing.T) {
 	}
 }
 
+func TestCluster_NoFeatures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		data [][]float64
+	}{
+		{name: "nil samples", data: [][]float64{nil, nil}},
+		{name: "empty samples", data: [][]float64{{}, {}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := New(1).Cluster(tt.data)
+
+			require.Nil(t, result)
+			require.ErrorIs(t, err, ErrNoFeatures)
+			require.EqualError(t, err, "invalid data: data must contain at least one feature")
+		})
+	}
+}
+
+func TestCluster_EmptyAndNonEmptySamplesHaveInconsistentDimensions(t *testing.T) {
+	t.Parallel()
+
+	result, err := New(1).Cluster([][]float64{{}, {1}})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrNoFeatures)
+	require.EqualError(t, err, "invalid data: data point at index 1 has dimension 1, expected 0")
+}
+
 func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
