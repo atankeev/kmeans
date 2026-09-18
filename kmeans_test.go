@@ -229,9 +229,7 @@ func TestKmeans_ValidateData(t *testing.T) {
 		kmeans := New(3)
 
 		err := kmeans.validateData(data)
-		if err == nil {
-			t.Error("expected error for more clusters than data points")
-		}
+		require.ErrorIs(t, err, ErrInvalidK)
 		if !strings.Contains(err.Error(), "cannot be greater than number of samples") {
 			t.Errorf("expected cluster count error, got %v", err)
 		}
@@ -2844,6 +2842,78 @@ func TestCluster_ValidationErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCluster_InvalidKBoundaries(t *testing.T) {
+	t.Parallel()
+
+	data := [][]float64{{0}, {1}}
+	tests := []struct {
+		name             string
+		nClusters        int
+		wantErr          bool
+		wantErrorMessage string
+	}{
+		{name: "zero", nClusters: 0, wantErr: true},
+		{name: "negative", nClusters: -1, wantErr: true},
+		{
+			name:             "greater than sample count",
+			nClusters:        3,
+			wantErr:          true,
+			wantErrorMessage: "invalid data: k must be between 1 and number of samples, inclusive: number of clusters (3) cannot be greater than number of samples (2)",
+		},
+		{name: "equal to sample count", nClusters: len(data)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := NewWithOptions(tt.nClusters, WithRandomSeed(42)).Cluster(data)
+
+			if !tt.wantErr {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				return
+			}
+
+			require.Nil(t, result)
+			require.ErrorIs(t, err, ErrInvalidK)
+			if tt.wantErrorMessage != "" {
+				require.EqualError(t, err, tt.wantErrorMessage)
+			}
+		})
+	}
+}
+
+func TestCluster_EmptyDataPrecedesSampleCountValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		data [][]float64
+	}{
+		{name: "nil", data: nil},
+		{name: "empty", data: [][]float64{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := New(1).Cluster(tt.data)
+
+			require.Nil(t, result)
+			require.ErrorIs(t, err, ErrEmptyData)
+			require.NotErrorIs(t, err, ErrInvalidK)
+		})
+	}
+}
+
+func TestErrInvalidKMessage(t *testing.T) {
+	t.Parallel()
+
+	require.EqualError(t, ErrInvalidK, "k must be between 1 and number of samples, inclusive")
 }
 
 func TestValidate_NInit(t *testing.T) {

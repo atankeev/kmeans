@@ -286,7 +286,12 @@ func (k *Kmeans) validateData(data [][]float64) error {
 	}
 
 	if k.NClusters > len(data) {
-		return fmt.Errorf("number of clusters (%d) cannot be greater than number of samples (%d)", k.NClusters, len(data))
+		return fmt.Errorf(
+			"%w: number of clusters (%d) cannot be greater than number of samples (%d)",
+			ErrInvalidK,
+			k.NClusters,
+			len(data),
+		)
 	}
 
 	return nil

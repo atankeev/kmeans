@@ -11,7 +11,7 @@ var (
 	ErrInvalidTol                  = errors.New("tol must be positive and finite")
 	// ErrInvalidInitMethod indicates that the configured centroid initialization method is unsupported.
 	ErrInvalidInitMethod = errors.New("invalid initialization method")
-	ErrInvalidK          = errors.New("k must be positive and less than number of samples")
+	ErrInvalidK          = errors.New("k must be between 1 and number of samples, inclusive")
 	ErrEmptyData         = errors.New("data cannot be empty")
 	ErrInvalidData       = errors.New("data must be a 2D slice")
 	// ErrNoFeatures indicates that samples contain no features.
