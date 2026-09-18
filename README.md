@@ -129,6 +129,7 @@ positive, and the convergence tolerance must be positive and finite.
 #### Lloyd's Algorithm
 - **Description**: Standard K-means algorithm
 - **Empty clusters**: Relocated to distinct samples with the largest current assignment error; ties use sample order
+- **Numerical safety**: Avoidable overflow in means, variance, distances, initialization weights, convergence, and inertia is handled with stable or scaled arithmetic. Successful results contain only finite centroids and inertia. If a required result cannot be represented safely, `Cluster` returns a nil result with `ErrNumericalOverflow`.
 - **Stopping behavior**: For each `Cluster` call, the effective tolerance is `Tol * mean(var(data, axis=0))`, using population variance. Each initialization stops when assignments are unchanged between consecutive iterations or when the squared Frobenius norm `sum((newCenters - oldCenters)^2)` is at most the effective tolerance. A zero-variance dataset therefore requires zero center movement unless assignments are unchanged. The lowest-inertia run is selected. If that run reaches `MaxIter` without convergence, `Cluster` returns its final result together with `ErrConvergenceFailed`.
 - **Best for**: General purpose clustering
 - **Time Complexity**: O(n*k*i*d) where n=points, k=clusters, i=iterations, d=dimensions
@@ -222,6 +223,9 @@ if errors.Is(err, kmeans.ErrConvergenceFailed) {
         log.Fatal("Tolerance must be positive and finite")
     case errors.Is(err, kmeans.ErrNonFiniteData):
         log.Fatal("Dataset contains a NaN or infinite coordinate")
+    case errors.Is(err, kmeans.ErrNumericalOverflow):
+        // Numerical overflow always returns a nil result.
+        log.Fatal("A required clustering result cannot be represented safely")
     default:
         log.Fatal("Clustering failed:", err)
     }

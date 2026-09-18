@@ -21,4 +21,7 @@ var (
 	// ErrConvergenceFailed indicates that the selected result did not converge within MaxIter.
 	// Cluster returns a usable final result together with this error.
 	ErrConvergenceFailed = errors.New("algorithm failed to converge within max_iterations")
+	// ErrNumericalOverflow indicates that finite input produced a required arithmetic result
+	// that cannot be represented or processed safely. Cluster returns a nil result.
+	ErrNumericalOverflow = errors.New("numerical overflow")
 )

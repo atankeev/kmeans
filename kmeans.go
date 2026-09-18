@@ -194,8 +194,10 @@ func (k *Kmeans) Validate() error {
 // not share random state with other invocations.
 //
 // If the selected lowest-inertia run does not converge within MaxIter, Cluster returns
-// its final result together with ErrConvergenceFailed. For configuration and data errors,
-// the returned result is nil.
+// its final result together with ErrConvergenceFailed. If finite input produces a required
+// arithmetic result that cannot be represented or processed safely, Cluster returns a nil
+// result and an error matching ErrNumericalOverflow. For configuration and data errors, the
+// returned result is also nil.
 func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	// Validate configuration
 	if err := k.Validate(); err != nil {
@@ -210,9 +212,9 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	labels := make([]int, len(data))
 	previousLabels := make([]int, len(data))
 	// Scratch buffer reused by initialization and empty-cluster recovery.
-	distances := make([]float64, len(data))
+	distances := make([]scaledValue, len(data))
 	randomState := k.newRandomState()
-	tolerance := calculateTolerance(data, k.Tol)
+	tolerance := calculateScaledTolerance(data, k.Tol)
 	var (
 		bestResult    *Result
 		bestLabels    []int
@@ -221,7 +223,7 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 
 	// Run the clustering algorithm multiple times and return the best result
 	for range k.NInit {
-		result, converged := k.lloydKMeans(
+		result, converged, err := k.lloydKMeans(
 			data,
 			labels,
 			previousLabels,
@@ -229,6 +231,12 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 			randomState,
 			tolerance,
 		)
+		if err != nil {
+			return nil, err
+		}
+		if !resultIsFinite(result) {
+			return nil, fmt.Errorf("clustering produced a non-finite result: %w", ErrNumericalOverflow)
+		}
 		if bestResult == nil || result.Inertia < bestResult.Inertia {
 			bestResult = result
 			bestLabels = append(bestLabels[:0], labels...)
@@ -242,6 +250,14 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	}
 
 	return bestResult, nil
+}
+
+func resultIsFinite(result *Result) bool {
+	if math.IsNaN(result.Inertia) || math.IsInf(result.Inertia, 0) {
+		return false
+	}
+
+	return centersAreFinite(result.Centroids)
 }
 
 func (k *Kmeans) newRandomState() *rand.Rand {
@@ -321,7 +337,7 @@ func (k *Kmeans) initRandomCentroids(data [][]float64, randomState *rand.Rand) [
 // from existing centroids, ensuring better initial placement than random selection.
 // The algorithm guarantees that no duplicate data points are selected as centroids.
 func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
-	return k.initKMeansPlusPlusCentroidsWithDistances(data, make([]float64, len(data)), k.newRandomState())
+	return k.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), k.newRandomState())
 }
 
 // initKMeansPlusPlusCentroidsWithDistances initializes cluster centroids using the k-means++
@@ -329,7 +345,7 @@ func (k *Kmeans) initKMeansPlusPlusCentroids(data [][]float64) [][]float64 {
 // The buffer must have len(data) capacity; it is re-initialized per run.
 func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 	data [][]float64,
-	distances []float64,
+	distances []scaledValue,
 	randomState *rand.Rand,
 ) [][]float64 {
 	nLocalTrials := k.NCentroidsInitTrials
@@ -341,11 +357,9 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 
 	// Squared distance from each data point to the nearest selected centroid
 	if len(distances) != len(data) {
-		distances = make([]float64, len(data))
+		distances = make([]scaledValue, len(data))
 	}
-	for i := range distances {
-		distances[i] = math.Inf(1)
-	}
+	clear(distances)
 
 	// Adds a data point as a centroid and updates the nearest-centroid distances.
 	addCentroid := func(idx int) {
@@ -353,7 +367,7 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 		copy(centroid, data[idx])
 		centroids = append(centroids, centroid)
 		usedIndices[idx] = struct{}{}
-		updateMinDistances(distances, data, centroid)
+		updateScaledMinDistances(distances, data, centroid, len(centroids) == 1)
 	}
 
 	// Select first centroid randomly
@@ -364,22 +378,22 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 		// When nLocalTrials <= 1, use standard k-means++ initialization
 		if nLocalTrials <= 1 {
 			// Select next centroid with probability proportional to squared distance
-			addCentroid(selectUniqueIndex(distances, usedIndices, randomState))
+			addCentroid(selectUniqueScaledIndex(distances, usedIndices, randomState))
 		} else {
 			// Use greedy k-means++ initialization with nLocalTrials
 			bestCentroidIdx := -1
-			bestInertia := math.Inf(1)
+			var bestInertia scaledValue
 
 			for range nLocalTrials {
 				// Select candidate centroid with probability proportional to squared distance
-				candidateIdx := selectUniqueIndex(distances, usedIndices, randomState)
+				candidateIdx := selectUniqueScaledIndex(distances, usedIndices, randomState)
 
 				// Calculate the inertia with this candidate without materializing the
 				// candidate as a centroid: min(existing distance, distance to candidate)
-				inertia := candidateCost(distances, data, data[candidateIdx])
+				inertia := scaledCandidateCost(distances, data, data[candidateIdx])
 
 				// If this candidate is better than the best so far, update the best centroid
-				if inertia < bestInertia {
+				if bestCentroidIdx == -1 || inertia.compare(bestInertia) < 0 {
 					bestInertia = inertia
 					bestCentroidIdx = candidateIdx
 				}
@@ -390,7 +404,7 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 				addCentroid(bestCentroidIdx)
 			} else {
 				// Fallback: select a random unused data point as centroid
-				addCentroid(selectUniqueIndex(distances, usedIndices, randomState))
+				addCentroid(selectUniqueScaledIndex(distances, usedIndices, randomState))
 			}
 		}
 	}
@@ -411,7 +425,7 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 //
 //	A slice of new cluster centers, where each center is a slice of float64.
 func (k *Kmeans) initCentroids(data [][]float64) [][]float64 {
-	return k.initCentroidsWithDistances(data, make([]float64, len(data)), k.newRandomState())
+	return k.initCentroidsWithDistances(data, make([]scaledValue, len(data)), k.newRandomState())
 }
 
 // initCentroidsWithDistances initializes the cluster centroids using the selected initialization
@@ -419,7 +433,7 @@ func (k *Kmeans) initCentroids(data [][]float64) [][]float64 {
 // ignored by initialization methods that do not need it.
 func (k *Kmeans) initCentroidsWithDistances(
 	data [][]float64,
-	distances []float64,
+	distances []scaledValue,
 	randomState *rand.Rand,
 ) [][]float64 {
 	switch k.Init {
@@ -442,20 +456,24 @@ func (k *Kmeans) initCentroidsWithDistances(
 // Returns:
 //
 //	A pointer to Result containing final centroids, labels, and inertia.
-func (k *Kmeans) clusterSingle(data [][]float64) *Result {
+func (k *Kmeans) clusterSingle(data [][]float64) (*Result, error) {
 	labels := make([]int, len(data))
 	previousLabels := make([]int, len(data))
-	distances := make([]float64, len(data))
-	result, _ := k.lloydKMeans(
+	distances := make([]scaledValue, len(data))
+	result, _, err := k.lloydKMeans(
 		data,
 		labels,
 		previousLabels,
 		distances,
 		k.newRandomState(),
-		calculateTolerance(data, k.Tol),
+		calculateScaledTolerance(data, k.Tol),
 	)
 
-	return result
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // lloydKMeans performs K-means clustering using Lloyd's algorithm.
@@ -476,10 +494,10 @@ func (k *Kmeans) lloydKMeans(
 	data [][]float64,
 	labels []int,
 	previousLabels []int,
-	distances []float64,
+	distances []scaledValue,
 	randomState *rand.Rand,
-	tolerance float64,
-) (*Result, bool) {
+	tolerance scaledValue,
+) (*Result, bool, error) {
 	centers := k.initCentroidsWithDistances(data, distances, randomState)
 	clear(labels)
 
@@ -499,11 +517,14 @@ func (k *Kmeans) lloydKMeans(
 		clearCenters(next)
 		clear(counts)
 		k.updateCentersLloydInto(next, counts, distances, data, labels, centers)
+		if !centersAreFinite(next) {
+			return nil, false, fmt.Errorf("update centroids: %w", ErrNumericalOverflow)
+		}
 
 		// As in sklearn, unchanged assignments take precedence over the
 		// tolerance-based squared Frobenius norm check.
 		labelsUnchanged := hasPreviousLabels && slices.Equal(labels, previousLabels)
-		converged = labelsUnchanged || checkConvergence(centers, next, tolerance)
+		converged = labelsUnchanged || checkScaledConvergence(centers, next, tolerance)
 
 		// Swap buffers: the just-computed centers become the current ones for the next iteration
 		centers, next = next, centers
@@ -519,13 +540,28 @@ func (k *Kmeans) lloydKMeans(
 	// Assign points to clusters again to ensure final assignments
 	labels = assignPointsToClusters(data, centers, labels)
 
-	finalInertia := calculateInertiaByLabels(data, centers, labels)
+	finalInertia, representable := calculateScaledInertiaByLabels(data, centers, labels).float64()
+	if !representable {
+		return nil, false, fmt.Errorf("calculate inertia: %w", ErrNumericalOverflow)
+	}
 
 	return &Result{
 		Centroids: centers,
 		Labels:    labels,
 		Inertia:   finalInertia,
-	}, converged
+	}, converged, nil
+}
+
+func centersAreFinite(centers [][]float64) bool {
+	for _, center := range centers {
+		for _, coordinate := range center {
+			if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 // updateCentersLloyd computes new cluster centers (centroids) for the Lloyd's algorithm step.
@@ -549,7 +585,7 @@ func (k *Kmeans) updateCentersLloyd(data [][]float64, labels []int, centers [][]
 	k.updateCentersLloydInto(
 		newCenters,
 		make([]int, k.NClusters),
-		make([]float64, len(data)),
+		make([]scaledValue, len(data)),
 		data,
 		labels,
 		centers,
@@ -566,26 +602,29 @@ func (k *Kmeans) updateCentersLloyd(data [][]float64, labels []int, centers [][]
 func (k *Kmeans) updateCentersLloydInto(
 	dst [][]float64,
 	counts []int,
-	distances []float64,
+	distances []scaledValue,
 	data [][]float64,
 	labels []int,
 	centers [][]float64,
 ) {
-	dim := len(data[0])
-
-	for i, point := range data {
+	for i := range data {
 		cluster := labels[i]
-		for d := range dim {
-			dst[cluster][d] += point[d]
-		}
 		counts[cluster]++
 	}
 
-	k.relocateEmptyClusters(dst, counts, distances, data, labels, centers)
+	k.relocateEmptyClusters(counts, distances, data, labels, centers)
 
-	for i := 0; i < k.NClusters; i++ {
-		for d := range dim {
-			dst[i][d] /= float64(counts[i])
+	seen := make([]int, k.NClusters)
+	dim := len(data[0])
+	for i, point := range data {
+		cluster := labels[i]
+		seen[cluster]++
+		for dimension := range dim {
+			dst[cluster][dimension] = updateMean(
+				dst[cluster][dimension],
+				point[dimension],
+				seen[cluster],
+			)
 		}
 	}
 }
@@ -594,9 +633,8 @@ func (k *Kmeans) updateCentersLloydInto(
 // descending squared distance to their currently assigned center, with lower sample indexes first
 // on ties. A source cluster must retain at least one sample.
 func (k *Kmeans) relocateEmptyClusters(
-	sums [][]float64,
 	counts []int,
-	distances []float64,
+	distances []scaledValue,
 	data [][]float64,
 	labels []int,
 	centers [][]float64,
@@ -609,10 +647,10 @@ func (k *Kmeans) relocateEmptyClusters(
 	candidates := make([]int, len(data))
 	for i, point := range data {
 		candidates[i] = i
-		distances[i] = squaredEuclideanDistance(point, centers[labels[i]])
+		distances[i] = scaledSquaredDistance(point, centers[labels[i]])
 	}
 	slices.SortFunc(candidates, func(a, b int) int {
-		if byDistance := cmp.Compare(distances[b], distances[a]); byDistance != 0 {
+		if byDistance := distances[b].compare(distances[a]); byDistance != 0 {
 			return byDistance
 		}
 
@@ -632,10 +670,6 @@ func (k *Kmeans) relocateEmptyClusters(
 		candidate := candidates[nextCandidate]
 		nextCandidate++
 		sourceCluster := labels[candidate]
-		for dimension, coordinate := range data[candidate] {
-			sums[sourceCluster][dimension] -= coordinate
-			sums[emptyCluster][dimension] += coordinate
-		}
 		counts[sourceCluster]--
 		counts[emptyCluster]++
 		labels[candidate] = emptyCluster
@@ -678,13 +712,13 @@ func assignPointsToClusters(data [][]float64, centers [][]float64, labels []int)
 		if bestCluster < 0 || bestCluster >= len(centers) {
 			bestCluster = 0
 		}
-		minDistance := squaredEuclideanDistance(point, centers[bestCluster])
+		minDistance := scaledSquaredDistance(point, centers[bestCluster])
 
 		// Find the nearest center for each point. Keeping the current label on exact ties
 		// lets recovered clusters remain populated when samples or centers are duplicates.
 		for j, center := range centers {
-			distance := squaredEuclideanDistance(point, center)
-			if distance < minDistance {
+			distance := scaledSquaredDistance(point, center)
+			if distance.compare(minDistance) < 0 {
 				minDistance = distance
 				bestCluster = j
 			}
@@ -700,15 +734,12 @@ func assignPointsToClusters(data [][]float64, centers [][]float64, labels []int)
 // This is more efficient than calculating the actual Euclidean distance since it avoids
 // the square root operation, and for clustering purposes, the relative distances are sufficient.
 func squaredEuclideanDistance(p1, p2 []float64) float64 {
-	sum := 0.0
-
-	for i := range p1 {
-		diff := p1[i] - p2[i]
-		// sum += diff * diff -> but more accurate
-		sum = math.FMA(diff, diff, sum)
+	distance, representable := scaledSquaredDistance(p1, p2).float64()
+	if !representable {
+		return math.Inf(1)
 	}
 
-	return sum
+	return distance
 }
 
 // calculateInertia calculates the total inertia (within-cluster sum of squares) for the given data points and cluster centers.
@@ -742,11 +773,18 @@ func calculateInertia(data [][]float64, centers [][]float64) float64 {
 //
 //	The total inertia, which is the sum of squared Euclidean distances from each data point to its assigned cluster center.
 func calculateInertiaByLabels(data [][]float64, centers [][]float64, labels []int) float64 {
-	inertia := 0.0
+	inertia, representable := calculateScaledInertiaByLabels(data, centers, labels).float64()
+	if !representable {
+		return math.Inf(1)
+	}
 
+	return inertia
+}
+
+func calculateScaledInertiaByLabels(data [][]float64, centers [][]float64, labels []int) scaledValue {
+	var inertia scaledValue
 	for i, point := range data {
-		cluster := labels[i]
-		inertia += squaredEuclideanDistance(point, centers[cluster])
+		inertia = inertia.add(scaledSquaredDistance(point, centers[labels[i]]))
 	}
 
 	return inertia
@@ -775,6 +813,74 @@ func candidateCost(distances []float64, data [][]float64, candidate []float64) f
 	}
 
 	return total
+}
+
+func updateScaledMinDistances(
+	distances []scaledValue,
+	data [][]float64,
+	center []float64,
+	initialize bool,
+) {
+	for i, point := range data {
+		distance := scaledSquaredDistance(point, center)
+		if initialize || distance.compare(distances[i]) < 0 {
+			distances[i] = distance
+		}
+	}
+}
+
+func scaledCandidateCost(distances []scaledValue, data [][]float64, candidate []float64) scaledValue {
+	var total scaledValue
+	for i, point := range data {
+		distance := scaledSquaredDistance(point, candidate)
+		if distances[i].compare(distance) < 0 {
+			distance = distances[i]
+		}
+		total = total.add(distance)
+	}
+
+	return total
+}
+
+func scaledWeightedRandomChoice(weights []scaledValue, rng *rand.Rand) int {
+	var largest scaledValue
+	for _, weight := range weights {
+		if weight.compare(largest) > 0 {
+			largest = weight
+		}
+	}
+	if largest.fraction == 0 {
+		return rng.Intn(len(weights))
+	}
+
+	total := 0.0
+	for _, weight := range weights {
+		total += weight.ratio(largest)
+	}
+
+	selection := rng.Float64() * total
+	cumulative := 0.0
+	for i, weight := range weights {
+		cumulative += weight.ratio(largest)
+		if selection <= cumulative {
+			return i
+		}
+	}
+
+	return len(weights) - 1
+}
+
+func selectUniqueScaledIndex(
+	weights []scaledValue,
+	usedIndices map[int]struct{},
+	rng *rand.Rand,
+) int {
+	for {
+		selectedIndex := scaledWeightedRandomChoice(weights, rng)
+		if _, alreadyUsed := usedIndices[selectedIndex]; !alreadyUsed {
+			return selectedIndex
+		}
+	}
 }
 
 // computeDistancesToCenters calculates the minimum squared Euclidean distance from each data point to its nearest cluster center.
@@ -835,49 +941,57 @@ func selectUniqueIndex(weights []float64, usedIndices map[int]struct{}, rng *ran
 // threshold used by sklearn: relativeTolerance multiplied by the mean population
 // variance across features.
 func calculateTolerance(data [][]float64, relativeTolerance float64) float64 {
+	tolerance, representable := calculateScaledTolerance(data, relativeTolerance).float64()
+	if !representable {
+		return math.Inf(1)
+	}
+
+	return tolerance
+}
+
+func calculateScaledTolerance(data [][]float64, relativeTolerance float64) scaledValue {
 	dim := len(data[0])
 	means := make([]float64, dim)
-	for _, point := range data {
+	for sampleIndex, point := range data {
 		for feature, value := range point {
-			means[feature] += value
+			means[feature] = updateMean(means[feature], value, sampleIndex+1)
 		}
 	}
 
-	sampleCount := float64(len(data))
-	for feature := range means {
-		means[feature] /= sampleCount
-	}
-
-	var varianceSum float64
+	var varianceSum scaledValue
 	for _, point := range data {
-		for feature, value := range point {
-			difference := value - means[feature]
-			varianceSum += difference * difference
-		}
+		varianceSum = varianceSum.add(scaledSquaredDistance(point, means))
 	}
 
-	meanVariance := varianceSum / (sampleCount * float64(dim))
-	return meanVariance * relativeTolerance
+	return varianceSum.
+		divide(float64(len(data))).
+		divide(float64(dim)).
+		multiply(relativeTolerance)
 }
 
 // checkConvergence reports whether the squared Frobenius norm of the center
 // shift is at or below the data-dependent tolerance.
 func checkConvergence(oldCenters, newCenters [][]float64, tolerance float64) bool {
+	if math.IsInf(tolerance, 1) {
+		return true
+	}
+
+	return checkScaledConvergence(oldCenters, newCenters, scaledFromFloat(tolerance))
+}
+
+func checkScaledConvergence(oldCenters, newCenters [][]float64, tolerance scaledValue) bool {
 	if len(oldCenters) != len(newCenters) {
 		return false
 	}
 
-	var centerShift float64
+	var centerShift scaledValue
 	for i := range oldCenters {
 		if len(oldCenters[i]) != len(newCenters[i]) {
 			return false
 		}
 
-		for feature := range oldCenters[i] {
-			difference := newCenters[i][feature] - oldCenters[i][feature]
-			centerShift += difference * difference
-		}
+		centerShift = centerShift.add(scaledSquaredDistance(oldCenters[i], newCenters[i]))
 	}
 
-	return centerShift <= tolerance
+	return centerShift.compare(tolerance) <= 0
 }

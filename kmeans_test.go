@@ -2095,6 +2095,23 @@ func TestCluster_ConcurrentCallsAreReproducible(t *testing.T) {
 		{16, 0}, {16, 1}, {17, 0},
 	}
 	kmeans := NewWithOptions(3, WithRandomSeed(42), WithNInit(1))
+	requireConcurrentCallsAreReproducible(t, kmeans, data)
+}
+
+func TestCluster_ScaledArithmeticConcurrentCallsAreReproducible(t *testing.T) {
+	t.Parallel()
+
+	data := [][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}}
+	kmeans := NewWithOptions(2,
+		WithRandomSeed(3),
+		WithNInit(1),
+		WithMaxIter(1),
+	)
+	requireConcurrentCallsAreReproducible(t, kmeans, data)
+}
+
+func requireConcurrentCallsAreReproducible(t *testing.T, kmeans *Kmeans, data [][]float64) {
+	t.Helper()
 
 	want, err := kmeans.Cluster(data)
 	require.NoError(t, err)
@@ -2373,6 +2390,8 @@ func TestCluster_Lloyd_SingleDimension(t *testing.T) {
 }
 
 func TestCluster_Lloyd_LargeNumbers(t *testing.T) {
+	t.Parallel()
+
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -2392,6 +2411,124 @@ func TestCluster_Lloyd_LargeNumbers(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
 	require.Positive(t, result.Inertia)
+}
+
+func TestCluster_IdenticalLargeCoordinatesRemainFinite(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(1,
+		WithRandomSeed(42),
+		WithNInit(1),
+	)
+
+	result, err := kmeans.Cluster([][]float64{{1e308}, {1e308}})
+
+	require.NoError(t, err)
+	require.Equal(t, [][]float64{{1e308}}, result.Centroids)
+	require.Equal(t, []int{0, 0}, result.Labels)
+	require.Zero(t, result.Inertia)
+}
+
+func TestCluster_IdenticalMaxFloatCoordinatesRemainFinite(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(1,
+		WithRandomSeed(42),
+		WithNInit(1),
+	)
+	data := [][]float64{{math.MaxFloat64}, {math.MaxFloat64}, {math.MaxFloat64}}
+
+	result, err := kmeans.Cluster(data)
+
+	require.NoError(t, err)
+	require.Equal(t, [][]float64{{math.MaxFloat64}}, result.Centroids)
+	require.Zero(t, result.Inertia)
+}
+
+func TestCluster_UnrepresentableInertiaReturnsNumericalOverflow(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(1,
+		WithRandomSeed(42),
+		WithNInit(1),
+	)
+
+	result, err := kmeans.Cluster([][]float64{{-1e308}, {1e308}})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrNumericalOverflow)
+}
+
+func TestCluster_UnrepresentableIntermediateDistancesRemainComparable(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(2,
+		WithRandomSeed(3),
+		WithNInit(1),
+		WithMaxIter(1),
+	)
+
+	result, err := kmeans.Cluster([][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}})
+
+	require.NoError(t, err)
+	require.ElementsMatch(t, [][]float64{{-1e308}, {1e308}}, result.Centroids)
+	require.Zero(t, result.Inertia)
+}
+
+func TestCluster_NonFiniteIntermediatesDoNotEstablishConvergence(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(2,
+		WithInitMethod(InitRandom),
+		WithRandomSeed(3),
+		WithNInit(1),
+		WithMaxIter(3),
+	)
+
+	result, err := kmeans.Cluster([][]float64{{1e308}, {1e308}, {1e307}, {1e307}})
+
+	require.NoError(t, err)
+	require.ElementsMatch(t, [][]float64{{1e307}, {1e308}}, result.Centroids)
+	require.Zero(t, result.Inertia)
+}
+
+func TestCluster_NumericalOverflowAbortsMultipleInitializationRuns(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(2,
+		WithInitMethod(InitRandom),
+		WithRandomSeed(0),
+		WithNInit(2),
+		WithMaxIter(1),
+	)
+
+	result, err := kmeans.Cluster([][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrNumericalOverflow)
+}
+
+func TestCluster_LargeCommonOffsetHasRepresentableResult(t *testing.T) {
+	t.Parallel()
+
+	const (
+		offset = 1e150
+		delta  = 1e140
+	)
+	kmeans := NewWithOptions(1,
+		WithRandomSeed(42),
+		WithNInit(1),
+	)
+	data := [][]float64{{offset - delta}, {offset + delta}}
+	wantCentroid := data[0][0]/2 + data[1][0]/2
+
+	result, err := kmeans.Cluster(data)
+
+	require.NoError(t, err)
+	require.Equal(t, wantCentroid, result.Centroids[0][0])
+	require.Positive(t, result.Inertia)
+	require.False(t, math.IsInf(result.Inertia, 0))
+	require.False(t, math.IsNaN(result.Inertia))
 }
 
 func TestCluster_Lloyd_SmallNumbers(t *testing.T) {
@@ -2593,6 +2730,8 @@ func TestInitCentroids_Default(t *testing.T) {
 }
 
 func TestClusterSingle_DefaultAlgorithm(t *testing.T) {
+	t.Parallel()
+
 	kmeans := NewWithOptions(2, WithRandomSeed(42))
 
 	data := [][]float64{
@@ -2602,8 +2741,9 @@ func TestClusterSingle_DefaultAlgorithm(t *testing.T) {
 		{12.0, 13.0},
 	}
 
-	result := kmeans.clusterSingle(data)
+	result, err := kmeans.clusterSingle(data)
 
+	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
 }
 
