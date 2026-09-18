@@ -2044,6 +2044,48 @@ func TestCluster_Lloyd_Basic(t *testing.T) {
 	require.Equal(t, result.Labels[2], result.Labels[3])
 }
 
+func TestCluster_CentroidRowsHaveIsolatedCapacity(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(2,
+		WithRandomSeed(42),
+		WithNInit(1),
+		WithTol(1),
+	)
+
+	result, err := kmeans.Cluster([][]float64{{0}, {1}, {9}, {10}})
+	require.NoError(t, err)
+	require.Equal(t, [][]float64{{0.5}, {9.5}}, result.Centroids)
+
+	for _, centroid := range result.Centroids {
+		require.Equal(t, len(centroid), cap(centroid))
+	}
+
+	appended := append(result.Centroids[0], 999)
+	require.Equal(t, []float64{0.5, 999}, appended)
+	require.Equal(t, []float64{9.5}, result.Centroids[1])
+
+	result.Centroids[0][0] = 1.5
+	require.Equal(t, []float64{1.5}, result.Centroids[0])
+	require.Equal(t, []float64{9.5}, result.Centroids[1])
+}
+
+func TestNewCenterBuffer_LimitsEveryRowCapacity(t *testing.T) {
+	t.Parallel()
+
+	const (
+		nClusters = 3
+		dim       = 2
+	)
+	centers := newCenterBuffer(nClusters, dim)
+
+	require.Len(t, centers, nClusters)
+	for _, center := range centers {
+		require.Len(t, center, dim)
+		require.Equal(t, len(center), cap(center))
+	}
+}
+
 func TestCluster_ConcurrentCallsAreReproducible(t *testing.T) {
 	t.Parallel()
 

@@ -647,7 +647,7 @@ func newCenterBuffer(nClusters, dim int) [][]float64 {
 	buf := make([][]float64, nClusters)
 	backing := make([]float64, nClusters*dim)
 	for i := 0; i < nClusters; i++ {
-		buf[i] = backing[i*dim : (i+1)*dim]
+		buf[i] = backing[i*dim : (i+1)*dim : (i+1)*dim]
 	}
 	return buf
 }
