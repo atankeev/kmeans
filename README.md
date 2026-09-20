@@ -129,8 +129,8 @@ positive, and the convergence tolerance must be positive and finite.
 #### Lloyd's Algorithm
 - **Description**: Standard K-means algorithm
 - **Empty clusters**: Relocated to distinct samples with the largest current assignment error; ties use sample order
-- **Numerical safety**: Avoidable overflow in means, variance, distances, initialization weights, convergence, and inertia is handled with stable or scaled arithmetic. Successful results contain only finite centroids and inertia. If a required result cannot be represented safely, `Cluster` returns a nil result with `ErrNumericalOverflow`.
-- **Stopping behavior**: For each `Cluster` call, the effective tolerance is `Tol * mean(var(data, axis=0))`, using population variance. Each initialization stops when assignments are unchanged between consecutive iterations or when the squared Frobenius norm `sum((newCenters - oldCenters)^2)` is at most the effective tolerance. A zero-variance dataset therefore requires zero center movement unless assignments are unchanged. The lowest-inertia run is selected. If that run reaches `MaxIter` without convergence, `Cluster` returns its final result together with `ErrConvergenceFailed`.
+- **Numerical safety**: Avoidable overflow in means, variance, distances, initialization weights, convergence, and inertia is handled with stable or scaled arithmetic. Successful results contain only finite centroids and inertia. If a required result exceeds the finite representable range or a calculation cannot be completed safely, `Cluster` returns a nil result with `ErrNumericalOverflow`. A positive inertia too small to represent may round to zero in `Result.Inertia` without an error; public zero does not prove exact coincidence of samples and centroids. Scale invariance is not guaranteed for arbitrary inputs or bit-for-bit: scaling can lose differences in input coordinates that the algorithm cannot recover.
+- **Stopping behavior**: For each `Cluster` call, the effective tolerance is `Tol * mean(var(data, axis=0))`, using population variance. Each initialization stops when assignments are unchanged between consecutive iterations or when the squared Frobenius norm `sum((newCenters - oldCenters)^2)` is at most the effective tolerance. A zero-variance dataset therefore requires zero center movement unless assignments are unchanged. Runs are ranked by internally computed inertia before conversion to public `float64`, so distinct positive inertias that both round to zero still retain their internal ordering. Equal internal inertias retain the first run, with no approximate-equality tolerance or preference for convergence. The selected run supplies its labels, centroids, public inertia, and convergence status together. If that run reaches `MaxIter` without convergence, `Cluster` returns its final result together with `ErrConvergenceFailed`.
 - **Best for**: General purpose clustering
 - **Time Complexity**: O(n*k*i*d) where n=points, k=clusters, i=iterations, d=dimensions
 
@@ -232,7 +232,7 @@ if errors.Is(err, kmeans.ErrConvergenceFailed) {
 }
 ```
 
-With multiple initializations, convergence status describes only the selected lowest-inertia run.
+With multiple initializations, convergence status describes only the selected lowest-inertia run. A lower-inertia non-converged run takes precedence over a converged run with higher inertia. Numerical overflow in any run aborts the call with a nil result, even if an earlier run was usable.
 Other validation and configuration errors return a nil result.
 
 ## Testing

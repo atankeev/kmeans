@@ -41,7 +41,8 @@ type Result struct {
 	// Cluster centroids
 	Centroids [][]float64
 
-	// Final inertia (sum of squared distances to closest centroid)
+	// Final inertia (sum of squared distances to closest centroid).
+	// A tiny positive inertia may round to zero; zero does not prove exact coincidence.
 	Inertia float64
 }
 
@@ -193,6 +194,9 @@ func (k *Kmeans) Validate() error {
 // mutate the instance or data during a call. Each invocation starts with RandomSeed and does
 // not share random state with other invocations.
 //
+// Runs are ranked by internally computed inertia before conversion to float64;
+// equal internal inertias retain the first run. Public inertia may round to zero.
+//
 // If the selected lowest-inertia run does not converge within MaxIter, Cluster returns
 // its final result together with ErrConvergenceFailed. If finite input produces a required
 // arithmetic result that cannot be represented or processed safely, Cluster returns a nil
@@ -217,13 +221,14 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 	tolerance := calculateScaledTolerance(data, k.Tol)
 	var (
 		bestResult    *Result
+		bestInertia   scaledValue
 		bestLabels    []int
 		bestConverged bool
 	)
 
 	// Run the clustering algorithm multiple times and return the best result
 	for range k.NInit {
-		result, converged, err := k.lloydKMeans(
+		result, inertia, converged, err := k.lloydKMeans(
 			data,
 			labels,
 			previousLabels,
@@ -237,8 +242,9 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 		if !resultIsFinite(result) {
 			return nil, fmt.Errorf("clustering produced a non-finite result: %w", ErrNumericalOverflow)
 		}
-		if bestResult == nil || result.Inertia < bestResult.Inertia {
+		if bestResult == nil || inertia.compare(bestInertia) < 0 {
 			bestResult = result
+			bestInertia = inertia
 			bestLabels = append(bestLabels[:0], labels...)
 			bestConverged = converged
 		}
@@ -460,7 +466,7 @@ func (k *Kmeans) clusterSingle(data [][]float64) (*Result, error) {
 	labels := make([]int, len(data))
 	previousLabels := make([]int, len(data))
 	distances := make([]scaledValue, len(data))
-	result, _, err := k.lloydKMeans(
+	result, _, _, err := k.lloydKMeans(
 		data,
 		labels,
 		previousLabels,
@@ -489,7 +495,7 @@ func (k *Kmeans) clusterSingle(data [][]float64) (*Result, error) {
 //
 // Returns:
 //
-//	A pointer to Result containing final centroids, labels, and inertia, and whether the run converged.
+//	A pointer to Result, its inertia before public conversion, and whether the run converged.
 func (k *Kmeans) lloydKMeans(
 	data [][]float64,
 	labels []int,
@@ -497,7 +503,7 @@ func (k *Kmeans) lloydKMeans(
 	distances []scaledValue,
 	randomState *rand.Rand,
 	tolerance scaledValue,
-) (*Result, bool, error) {
+) (*Result, scaledValue, bool, error) {
 	centers := k.initCentroidsWithDistances(data, distances, randomState)
 	clear(labels)
 
@@ -518,7 +524,7 @@ func (k *Kmeans) lloydKMeans(
 		clear(counts)
 		k.updateCentersLloydInto(next, counts, distances, data, labels, centers)
 		if !centersAreFinite(next) {
-			return nil, false, fmt.Errorf("update centroids: %w", ErrNumericalOverflow)
+			return nil, scaledValue{}, false, fmt.Errorf("update centroids: %w", ErrNumericalOverflow)
 		}
 
 		// As in sklearn, unchanged assignments take precedence over the
@@ -540,16 +546,17 @@ func (k *Kmeans) lloydKMeans(
 	// Assign points to clusters again to ensure final assignments
 	labels = assignPointsToClusters(data, centers, labels)
 
-	finalInertia, representable := calculateScaledInertiaByLabels(data, centers, labels).float64()
+	inertia := calculateScaledInertiaByLabels(data, centers, labels)
+	finalInertia, representable := inertia.float64()
 	if !representable {
-		return nil, false, fmt.Errorf("calculate inertia: %w", ErrNumericalOverflow)
+		return nil, scaledValue{}, false, fmt.Errorf("calculate inertia: %w", ErrNumericalOverflow)
 	}
 
 	return &Result{
 		Centroids: centers,
 		Labels:    labels,
 		Inertia:   finalInertia,
-	}, converged, nil
+	}, inertia, converged, nil
 }
 
 func centersAreFinite(centers [][]float64) bool {

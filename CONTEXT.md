@@ -14,6 +14,7 @@ _Avoid_: Partial result, best-effort result
 
 **Numerical overflow**:
 A failure to represent or safely process a required arithmetic result while clustering finite input.
+Rounding a positive inertia to zero because it is too small to represent is not numerical overflow.
 _Avoid_: Invalid data, convergence failure
 
 **Usable non-converged result**:
@@ -25,5 +26,5 @@ One independent execution of the clustering algorithm from an initialized set of
 _Avoid_: Attempt, retry
 
 **Inertia**:
-The sum of squared distances from samples to their assigned centroids.
+The sum of squared distances from samples to their assigned centroids. A reported inertia of zero may reflect rounding of a very small positive value rather than exact coincidence of samples and centroids.
 _Avoid_: Cost, score

@@ -2512,6 +2512,18 @@ func TestCluster_NonFiniteIntermediatesDoNotEstablishConvergence(t *testing.T) {
 func TestCluster_NumericalOverflowAbortsMultipleInitializationRuns(t *testing.T) {
 	t.Parallel()
 
+	data := [][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}}
+	first, err := NewWithOptions(2,
+		WithInitMethod(InitRandom),
+		WithRandomSeed(0),
+		WithNInit(1),
+		WithMaxIter(1),
+	).Cluster(data)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	require.Zero(t, first.Inertia)
+	require.ElementsMatch(t, [][]float64{{-1e308}, {1e308}}, first.Centroids)
+
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitRandom),
 		WithRandomSeed(0),
@@ -2519,7 +2531,7 @@ func TestCluster_NumericalOverflowAbortsMultipleInitializationRuns(t *testing.T)
 		WithMaxIter(1),
 	)
 
-	result, err := kmeans.Cluster([][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}})
+	result, err := kmeans.Cluster(data)
 
 	require.Nil(t, result)
 	require.ErrorIs(t, err, ErrNumericalOverflow)
