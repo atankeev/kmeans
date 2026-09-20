@@ -2413,6 +2413,23 @@ func TestCluster_Lloyd_LargeNumbers(t *testing.T) {
 	require.Positive(t, result.Inertia)
 }
 
+func TestCluster_NegativeCoordinates(t *testing.T) {
+	t.Parallel()
+
+	kmeans := NewWithOptions(1,
+		WithRandomSeed(42),
+		WithNInit(1),
+	)
+	data := [][]float64{{-4, -2}, {-2, -4}}
+
+	result, err := kmeans.Cluster(data)
+
+	require.NoError(t, err)
+	require.Equal(t, [][]float64{{-3, -3}}, result.Centroids)
+	require.Equal(t, []int{0, 0}, result.Labels)
+	require.Equal(t, 4.0, result.Inertia)
+}
+
 func TestCluster_IdenticalLargeCoordinatesRemainFinite(t *testing.T) {
 	t.Parallel()
 
