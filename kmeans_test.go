@@ -260,8 +260,9 @@ func TestKmeans_ValidateData(t *testing.T) {
 	})
 }
 
-// TestSquaredEuclideanDistance tests the squaredEuclideanDistance function
-func TestSquaredEuclideanDistance(t *testing.T) {
+// TestScaledSquaredDistance tests the scaledSquaredDistance function
+func TestScaledSquaredDistance(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		p1       []float64
@@ -326,64 +327,72 @@ func TestSquaredEuclideanDistance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := squaredEuclideanDistance(tt.p1, tt.p2)
+			t.Parallel()
+			result := requireFiniteScaled(t, scaledSquaredDistance(tt.p1, tt.p2))
 
 			// Use approximate comparison for floating point values
 			if !isApproximatelyEqual(result, tt.expected, 1e-10) {
-				t.Errorf("squaredEuclideanDistance(%v, %v) = %f, want %f",
+				t.Errorf("scaledSquaredDistance(%v, %v) = %f, want %f",
 					tt.p1, tt.p2, result, tt.expected)
 			}
 		})
 	}
 }
 
-// TestSquaredEuclideanDistance_EdgeCases tests edge cases for the squaredEuclideanDistance function
-func TestSquaredEuclideanDistance_EdgeCases(t *testing.T) {
+// TestScaledSquaredDistance_EdgeCases tests edge cases for the scaledSquaredDistance function
+func TestScaledSquaredDistance_EdgeCases(t *testing.T) {
+	t.Parallel()
 	t.Run("empty slices", func(t *testing.T) {
-		result := squaredEuclideanDistance([]float64{}, []float64{})
+		t.Parallel()
+		result := requireFiniteScaled(t, scaledSquaredDistance([]float64{}, []float64{}))
 		expected := 0.0
 		if result != expected {
-			t.Errorf("squaredEuclideanDistance([], []) = %f, want %f", result, expected)
+			t.Errorf("scaledSquaredDistance([], []) = %f, want %f", result, expected)
 		}
 	})
 
 	t.Run("nil slices", func(t *testing.T) {
-		result := squaredEuclideanDistance(nil, nil)
+		t.Parallel()
+		result := requireFiniteScaled(t, scaledSquaredDistance(nil, nil))
 		expected := 0.0
 		if result != expected {
-			t.Errorf("squaredEuclideanDistance(nil, nil) = %f, want %f", result, expected)
+			t.Errorf("scaledSquaredDistance(nil, nil) = %f, want %f", result, expected)
 		}
 	})
 
 	t.Run("very large numbers", func(t *testing.T) {
+		t.Parallel()
 		p1 := []float64{1e10, 2e10}
 		p2 := []float64{3e10, 4e10}
-		result := squaredEuclideanDistance(p1, p2)
+		result := requireFiniteScaled(t, scaledSquaredDistance(p1, p2))
 		expected := 8e20 // (2e10)² + (2e10)² = 4e20 + 4e20 = 8e20
 		if !isApproximatelyEqual(result, expected, 1e-10) {
-			t.Errorf("squaredEuclideanDistance(%v, %v) = %e, want %e", p1, p2, result, expected)
+			t.Errorf("scaledSquaredDistance(%v, %v) = %e, want %e", p1, p2, result, expected)
 		}
 	})
 
 	t.Run("very small numbers", func(t *testing.T) {
+		t.Parallel()
 		p1 := []float64{1e-10, 2e-10}
 		p2 := []float64{3e-10, 4e-10}
-		result := squaredEuclideanDistance(p1, p2)
+		result := requireFiniteScaled(t, scaledSquaredDistance(p1, p2))
 		expected := 8e-20 // (2e-10)² + (2e-10)² = 4e-20 + 4e-20 = 8e-20
 		if !isApproximatelyEqual(result, expected, 1e-30) {
-			t.Errorf("squaredEuclideanDistance(%v, %v) = %e, want %e", p1, p2, result, expected)
+			t.Errorf("scaledSquaredDistance(%v, %v) = %e, want %e", p1, p2, result, expected)
 		}
 	})
 }
 
-// TestSquaredEuclideanDistance_Properties tests mathematical properties of the function
-func TestSquaredEuclideanDistance_Properties(t *testing.T) {
+// TestScaledSquaredDistance_Properties tests mathematical properties of the function
+func TestScaledSquaredDistance_Properties(t *testing.T) {
+	t.Parallel()
 	t.Run("commutativity", func(t *testing.T) {
+		t.Parallel()
 		p1 := []float64{1.0, 2.0, 3.0}
 		p2 := []float64{4.0, 5.0, 6.0}
 
-		d1 := squaredEuclideanDistance(p1, p2)
-		d2 := squaredEuclideanDistance(p2, p1)
+		d1 := requireFiniteScaled(t, scaledSquaredDistance(p1, p2))
+		d2 := requireFiniteScaled(t, scaledSquaredDistance(p2, p1))
 
 		if !isApproximatelyEqual(d1, d2, 1e-10) {
 			t.Errorf("distance should be commutative: %f != %f", d1, d2)
@@ -391,15 +400,16 @@ func TestSquaredEuclideanDistance_Properties(t *testing.T) {
 	})
 
 	t.Run("triangle inequality for squared distances", func(t *testing.T) {
+		t.Parallel()
 		// Note: squared Euclidean distance does NOT satisfy triangle inequality
 		// This test demonstrates that property
 		p1 := []float64{0.0, 0.0}
 		p2 := []float64{3.0, 0.0}
 		p3 := []float64{3.0, 4.0}
 
-		d12 := squaredEuclideanDistance(p1, p2) // 9
-		d23 := squaredEuclideanDistance(p2, p3) // 16
-		d13 := squaredEuclideanDistance(p1, p3) // 25
+		d12 := requireFiniteScaled(t, scaledSquaredDistance(p1, p2)) // 9
+		d23 := requireFiniteScaled(t, scaledSquaredDistance(p2, p3)) // 16
+		d13 := requireFiniteScaled(t, scaledSquaredDistance(p1, p3)) // 25
 
 		// d13 > d12 + d23 (25 > 9 + 16 = 25 is false, but 25 > 9 + 16 = 25 is false)
 		// This shows that squared distance doesn't satisfy triangle inequality
@@ -409,16 +419,17 @@ func TestSquaredEuclideanDistance_Properties(t *testing.T) {
 	})
 
 	t.Run("scaling property", func(t *testing.T) {
+		t.Parallel()
 		p1 := []float64{1.0, 2.0}
 		p2 := []float64{3.0, 4.0}
 		scale := 2.0
 
-		d1 := squaredEuclideanDistance(p1, p2)
+		d1 := requireFiniteScaled(t, scaledSquaredDistance(p1, p2))
 
 		// Scale both points
 		scaledP1 := []float64{p1[0] * scale, p1[1] * scale}
 		scaledP2 := []float64{p2[0] * scale, p2[1] * scale}
-		d2 := squaredEuclideanDistance(scaledP1, scaledP2)
+		d2 := requireFiniteScaled(t, scaledSquaredDistance(scaledP1, scaledP2))
 
 		expected := d1 * scale * scale
 		if !isApproximatelyEqual(d2, expected, 1e-10) {
@@ -432,215 +443,8 @@ func isApproximatelyEqual(a, b, tolerance float64) bool {
 	return (a-b) <= tolerance && (b-a) <= tolerance
 }
 
-// TestCalculateInertia tests the calculateInertia function
-func TestCalculateInertia(t *testing.T) {
-	tests := []struct {
-		name     string
-		data     [][]float64
-		centers  [][]float64
-		expected float64
-	}{
-		{
-			name: "single center, single point",
-			data: [][]float64{
-				{1.0, 2.0},
-			},
-			centers: [][]float64{
-				{1.0, 2.0},
-			},
-			expected: 0.0, // Point is exactly at center
-		},
-		{
-			name: "single center, multiple points",
-			data: [][]float64{
-				{0.0, 0.0},
-				{3.0, 4.0},
-				{6.0, 8.0},
-			},
-			centers: [][]float64{
-				{0.0, 0.0},
-			},
-			expected: 125.0, // 0 + 25 + 100 = 125
-		},
-		{
-			name: "two centers, points assigned to nearest",
-			data: [][]float64{
-				{1.0, 1.0}, // Closer to center1
-				{9.0, 9.0}, // Closer to center2
-				{2.0, 2.0}, // Closer to center1
-				{8.0, 8.0}, // Closer to center2
-			},
-			centers: [][]float64{
-				{0.0, 0.0},   // center1
-				{10.0, 10.0}, // center2
-			},
-			expected: 20.0, // 2 + 2 + 8 + 8 = 20
-		},
-		{
-			name: "three centers, optimal assignment",
-			data: [][]float64{
-				{1.0, 1.0}, // Closest to center1
-				{5.0, 5.0}, // Closest to center2
-				{9.0, 9.0}, // Closest to center3
-			},
-			centers: [][]float64{
-				{0.0, 0.0},   // center1
-				{5.0, 5.0},   // center2
-				{10.0, 10.0}, // center3
-			},
-			expected: 4.0, // 2 + 0 + 2 = 4
-		},
-		{
-			name: "empty data",
-			data: [][]float64{},
-			centers: [][]float64{
-				{1.0, 2.0},
-				{3.0, 4.0},
-			},
-			expected: 0.0,
-		},
-		{
-			name: "empty centers",
-			data: [][]float64{
-				{1.0, 2.0},
-				{3.0, 4.0},
-			},
-			centers:  [][]float64{},
-			expected: math.Inf(1) * 2, // Each point gets Inf distance
-		},
-		{
-			name: "3D points",
-			data: [][]float64{
-				{1.0, 2.0, 3.0},
-				{4.0, 5.0, 6.0},
-			},
-			centers: [][]float64{
-				{0.0, 0.0, 0.0},
-				{5.0, 5.0, 5.0},
-			},
-			expected: 16.0, // 14 + 2 = 16
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := calculateInertia(tt.data, tt.centers)
-
-			if math.IsInf(tt.expected, 1) {
-				// Handle infinite expected values
-				if !math.IsInf(result, 1) {
-					t.Errorf("calculateInertia() = %f, want Inf", result)
-				}
-			} else {
-				// Use approximate comparison for finite values
-				if !isApproximatelyEqual(result, tt.expected, 1e-10) {
-					t.Errorf("calculateInertia() = %f, want %f", result, tt.expected)
-				}
-			}
-		})
-	}
-}
-
-// TestCalculateInertia_EdgeCases tests edge cases for the calculateInertia function
-func TestCalculateInertia_EdgeCases(t *testing.T) {
-	t.Run("nil data", func(t *testing.T) {
-		var data [][]float64
-		centers := [][]float64{{1.0, 2.0}}
-		result := calculateInertia(data, centers)
-		expected := 0.0
-		if result != expected {
-			t.Errorf("calculateInertia(nil, %v) = %f, want %f", centers, result, expected)
-		}
-	})
-
-	t.Run("nil centers", func(t *testing.T) {
-		data := [][]float64{{1.0, 2.0}, {3.0, 4.0}}
-		var centers [][]float64
-		result := calculateInertia(data, centers)
-		if !math.IsInf(result, 1) {
-			t.Errorf("calculateInertia(%v, nil) = %f, want Inf", data, result)
-		}
-	})
-
-	t.Run("single point with multiple centers", func(t *testing.T) {
-		data := [][]float64{{5.0, 5.0}}
-		centers := [][]float64{
-			{0.0, 0.0},   // distance = 50
-			{10.0, 10.0}, // distance = 50
-			{5.0, 5.0},   // distance = 0 (closest)
-		}
-		result := calculateInertia(data, centers)
-		expected := 0.0
-		if !isApproximatelyEqual(result, expected, 1e-10) {
-			t.Errorf("calculateInertia() = %f, want %f", result, expected)
-		}
-	})
-
-	t.Run("points equidistant from centers", func(t *testing.T) {
-		data := [][]float64{
-			{5.0, 0.0}, // Equidistant from both centers
-		}
-		centers := [][]float64{
-			{0.0, 0.0},  // distance = 25
-			{10.0, 0.0}, // distance = 25
-		}
-		result := calculateInertia(data, centers)
-		expected := 25.0 // Should pick the minimum (both are equal)
-		if !isApproximatelyEqual(result, expected, 1e-10) {
-			t.Errorf("calculateInertia() = %f, want %f", result, expected)
-		}
-	})
-}
-
-// TestCalculateInertia_Properties tests mathematical properties of the function
-func TestCalculateInertia_Properties(t *testing.T) {
-	t.Run("monotonicity with center movement", func(t *testing.T) {
-		data := [][]float64{{1.0, 1.0}, {9.0, 9.0}}
-		centers1 := [][]float64{{0.0, 0.0}, {10.0, 10.0}}
-		centers2 := [][]float64{{1.0, 1.0}, {9.0, 9.0}} // Centers exactly at data points
-
-		inertia1 := calculateInertia(data, centers1)
-		inertia2 := calculateInertia(data, centers2)
-
-		// Moving centers to data points should reduce inertia to zero
-		if inertia2 >= inertia1 {
-			t.Errorf("Moving centers to data points should reduce inertia: %f >= %f", inertia2, inertia1)
-		}
-		if inertia2 != 0.0 {
-			t.Errorf("Centers at data points should give zero inertia: %f", inertia2)
-		}
-	})
-
-	t.Run("additivity", func(t *testing.T) {
-		data1 := [][]float64{{1.0, 1.0}}
-		data2 := [][]float64{{9.0, 9.0}}
-		centers := [][]float64{{0.0, 0.0}, {10.0, 10.0}}
-
-		inertia1 := calculateInertia(data1, centers)
-		inertia2 := calculateInertia(data2, centers)
-		inertiaCombined := calculateInertia(append(data1, data2...), centers)
-
-		// Inertia should be additive
-		expected := inertia1 + inertia2
-		if !isApproximatelyEqual(inertiaCombined, expected, 1e-10) {
-			t.Errorf("Inertia should be additive: %f != %f + %f", inertiaCombined, inertia1, inertia2)
-		}
-	})
-
-	t.Run("optimal centers give zero inertia", func(t *testing.T) {
-		data := [][]float64{{1.0, 1.0}, {5.0, 5.0}, {9.0, 9.0}}
-		centers := [][]float64{{1.0, 1.0}, {5.0, 5.0}, {9.0, 9.0}} // Centers exactly at data points
-
-		inertia := calculateInertia(data, centers)
-		expected := 0.0
-		if !isApproximatelyEqual(inertia, expected, 1e-10) {
-			t.Errorf("Optimal centers should give zero inertia: %f != %f", inertia, expected)
-		}
-	})
-}
-
-// TestComputeDistancesToCenters tests the computeDistancesToCenters function
-func TestComputeDistancesToCenters(t *testing.T) {
+func TestUpdateScaledMinDistances(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		data     [][]float64
@@ -704,15 +508,6 @@ func TestComputeDistancesToCenters(t *testing.T) {
 			expected: []float64{},
 		},
 		{
-			name: "empty centers",
-			data: [][]float64{
-				{1.0, 2.0},
-				{3.0, 4.0},
-			},
-			centers:  [][]float64{},
-			expected: []float64{math.Inf(1), math.Inf(1)},
-		},
-		{
 			name: "3D points",
 			data: [][]float64{
 				{1.0, 2.0, 3.0}, // Distance to center1 = 14, to center2 = 14
@@ -739,156 +534,41 @@ func TestComputeDistancesToCenters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := computeDistancesToCenters(tt.data, tt.centers, make([]float64, len(tt.data)))
-
-			if len(result) != len(tt.expected) {
-				t.Errorf("computeDistancesToCenters() returned %d distances, want %d", len(result), len(tt.expected))
-				return
+			t.Parallel()
+			distances := make([]scaledValue, len(tt.data))
+			for i, center := range tt.centers {
+				updateScaledMinDistances(distances, tt.data, center, i == 0)
 			}
-
+			var expectedInertia float64
 			for i, expected := range tt.expected {
-				if math.IsInf(expected, 1) {
-					// Handle infinite expected values
-					if !math.IsInf(result[i], 1) {
-						t.Errorf("computeDistancesToCenters()[%d] = %f, want Inf", i, result[i])
-					}
-				} else {
-					// Use approximate comparison for finite values
-					if !isApproximatelyEqual(result[i], expected, 1e-10) {
-						t.Errorf("computeDistancesToCenters()[%d] = %f, want %f", i, result[i], expected)
-					}
-				}
+				require.InDelta(t, expected, requireFiniteScaled(t, distances[i]), 1e-10)
+				expectedInertia += expected
 			}
+			labels := assignPointsToClusters(tt.data, tt.centers, make([]int, len(tt.data)))
+			inertia := calculateScaledInertiaByLabels(tt.data, tt.centers, labels)
+			require.InDelta(t, expectedInertia, requireFiniteScaled(t, inertia), 1e-10)
 		})
 	}
 }
 
-// TestComputeDistancesToCenters_EdgeCases tests edge cases for the computeDistancesToCenters function
-func TestComputeDistancesToCenters_EdgeCases(t *testing.T) {
-	t.Run("nil data", func(t *testing.T) {
-		var data [][]float64
-		centers := [][]float64{{1.0, 2.0}}
-		result := computeDistancesToCenters(data, centers, make([]float64, len(data)))
-		expected := make([]float64, 0)
-		if !reflect.DeepEqual(result, expected) {
-			t.Errorf("computeDistancesToCenters(nil, %v) = %v, want %v", centers, result, expected)
-		}
-	})
-
-	t.Run("nil centers", func(t *testing.T) {
-		data := [][]float64{{1.0, 2.0}, {3.0, 4.0}}
-		var centers [][]float64
-		result := computeDistancesToCenters(data, centers, make([]float64, len(data)))
-		expected := []float64{math.Inf(1), math.Inf(1)}
-		if !reflect.DeepEqual(result, expected) {
-			t.Errorf("computeDistancesToCenters(%v, nil) = %v, want %v", data, result, expected)
-		}
-	})
-
-	t.Run("single point with multiple centers", func(t *testing.T) {
-		data := [][]float64{{5.0, 5.0}}
-		centers := [][]float64{
-			{0.0, 0.0},   // distance = 50
-			{10.0, 10.0}, // distance = 50
-			{5.0, 5.0},   // distance = 0 (closest)
-		}
-		result := computeDistancesToCenters(data, centers, make([]float64, len(data)))
-		expected := []float64{0.0}
-		if !reflect.DeepEqual(result, expected) {
-			t.Errorf("computeDistancesToCenters() = %v, want %v", result, expected)
-		}
-	})
-
-	t.Run("high dimensional data", func(t *testing.T) {
-		data := [][]float64{
-			{1.0, 2.0, 3.0, 4.0, 5.0},
-			{6.0, 7.0, 8.0, 9.0, 10.0},
-		}
-		centers := [][]float64{
-			{0.0, 0.0, 0.0, 0.0, 0.0},
-			{5.0, 5.0, 5.0, 5.0, 5.0},
-		}
-		result := computeDistancesToCenters(data, centers, make([]float64, len(data)))
-		// Point 1: distance to center1 = 1²+2²+3²+4²+5² = 55, distance to center2 = 4²+3²+2²+1²+0² = 30 (closer)
-		// Point 2: distance to center1 = 6²+7²+8²+9²+10² = 330, distance to center2 = 1²+2²+3²+4²+5² = 55 (closer)
-		expected := []float64{30.0, 55.0}
-		for i, expected := range expected {
-			if !isApproximatelyEqual(result[i], expected, 1e-10) {
-				t.Errorf("computeDistancesToCenters()[%d] = %f, want %f", i, result[i], expected)
-			}
-		}
-	})
-}
-
-// TestComputeDistancesToCenters_Properties tests mathematical properties of the function
-func TestComputeDistancesToCenters_Properties(t *testing.T) {
-	t.Run("monotonicity with center movement", func(t *testing.T) {
-		data := [][]float64{{1.0, 1.0}, {9.0, 9.0}}
-		centers1 := [][]float64{{0.0, 0.0}, {10.0, 10.0}}
-		centers2 := [][]float64{{1.0, 1.0}, {9.0, 9.0}} // Centers exactly at data points
-
-		distances1 := computeDistancesToCenters(data, centers1, make([]float64, len(data)))
-		distances2 := computeDistancesToCenters(data, centers2, make([]float64, len(data)))
-
-		// Moving centers to data points should reduce distances to zero
-		for i := range distances2 {
-			if distances2[i] >= distances1[i] {
-				t.Errorf("Moving centers to data points should reduce distances: distances2[%d] = %f >= distances1[%d] = %f",
-					i, distances2[i], i, distances1[i])
-			}
-			if distances2[i] != 0.0 {
-				t.Errorf("Centers at data points should give zero distance: distances2[%d] = %f", i, distances2[i])
-			}
-		}
-	})
-
-	t.Run("consistency with calculateInertia", func(t *testing.T) {
-		data := [][]float64{{1.0, 1.0}, {9.0, 9.0}}
-		centers := [][]float64{{0.0, 0.0}, {10.0, 10.0}}
-
-		distances := computeDistancesToCenters(data, centers, make([]float64, len(data)))
-		inertia := calculateInertia(data, centers)
-
-		// Sum of distances should equal inertia
-		sum := 0.0
-		for _, dist := range distances {
-			sum += dist
-		}
-
-		if !isApproximatelyEqual(sum, inertia, 1e-10) {
-			t.Errorf("Sum of distances (%f) should equal inertia (%f)", sum, inertia)
-		}
-	})
-
-	t.Run("all distances non-negative", func(t *testing.T) {
-		data := [][]float64{{1.0, 2.0}, {3.0, 4.0}, {5.0, 6.0}}
-		centers := [][]float64{{0.0, 0.0}, {10.0, 10.0}}
-
-		distances := computeDistancesToCenters(data, centers, make([]float64, len(data)))
-
-		for i, dist := range distances {
-			if dist < 0 {
-				t.Errorf("Distance[%d] = %f should be non-negative", i, dist)
-			}
-		}
-	})
-}
-
-// TestWeightedRandomChoice tests the weightedRandomChoice function
-func TestWeightedRandomChoice(t *testing.T) {
+// TestScaledWeightedRandomChoice tests the scaledWeightedRandomChoice function
+func TestScaledWeightedRandomChoice(t *testing.T) {
+	t.Parallel()
 	t.Run("single weight", func(t *testing.T) {
-		weights := []float64{1.0}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(1.0)}
 		rng := rand.New(rand.NewSource(42))
 
-		result := weightedRandomChoice(weights, rng)
+		result := scaledWeightedRandomChoice(weights, rng)
 		expected := 0
 		if result != expected {
-			t.Errorf("weightedRandomChoice([1.0]) = %d, want %d", result, expected)
+			t.Errorf("scaledWeightedRandomChoice([1.0]) = %d, want %d", result, expected)
 		}
 	})
 
 	t.Run("equal weights", func(t *testing.T) {
-		weights := []float64{1.0, 1.0, 1.0}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(1.0), scaledFromFloat(1.0), scaledFromFloat(1.0)}
 		rng := rand.New(rand.NewSource(42))
 
 		// Run multiple times to check distribution
@@ -896,7 +576,7 @@ func TestWeightedRandomChoice(t *testing.T) {
 		nTrials := 1000
 
 		for range nTrials {
-			result := weightedRandomChoice(weights, rng)
+			result := scaledWeightedRandomChoice(weights, rng)
 			if result >= 0 && result < len(weights) {
 				counts[result]++
 			}
@@ -911,18 +591,20 @@ func TestWeightedRandomChoice(t *testing.T) {
 	})
 
 	t.Run("zero weights", func(t *testing.T) {
-		weights := []float64{0.0, 0.0, 0.0}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(0.0), scaledFromFloat(0.0), scaledFromFloat(0.0)}
 		rng := rand.New(rand.NewSource(42))
 
-		result := weightedRandomChoice(weights, rng)
+		result := scaledWeightedRandomChoice(weights, rng)
 		// Should return a random index in [0, len(weights))
 		if result < 0 || result >= len(weights) {
-			t.Errorf("weightedRandomChoice([0,0,0]) = %d, want in [0,%d]", result, len(weights)-1)
+			t.Errorf("scaledWeightedRandomChoice([0,0,0]) = %d, want in [0,%d]", result, len(weights)-1)
 		}
 	})
 
 	t.Run("mixed zero and non-zero weights", func(t *testing.T) {
-		weights := []float64{0.0, 1.0, 0.0, 2.0}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(0.0), scaledFromFloat(1.0), scaledFromFloat(0.0), scaledFromFloat(2.0)}
 		rng := rand.New(rand.NewSource(42))
 
 		// Run multiple times to check distribution
@@ -930,7 +612,7 @@ func TestWeightedRandomChoice(t *testing.T) {
 		nTrials := 1000
 
 		for range nTrials {
-			result := weightedRandomChoice(weights, rng)
+			result := scaledWeightedRandomChoice(weights, rng)
 			if result >= 0 && result < len(weights) {
 				counts[result]++
 			}
@@ -960,7 +642,8 @@ func TestWeightedRandomChoice(t *testing.T) {
 	})
 
 	t.Run("very large weights", func(t *testing.T) {
-		weights := []float64{1e10, 2e10, 3e10}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(1e10), scaledFromFloat(2e10), scaledFromFloat(3e10)}
 		rng := rand.New(rand.NewSource(42))
 
 		// Run multiple times to check distribution
@@ -968,7 +651,7 @@ func TestWeightedRandomChoice(t *testing.T) {
 		nTrials := 1000
 
 		for range nTrials {
-			result := weightedRandomChoice(weights, rng)
+			result := scaledWeightedRandomChoice(weights, rng)
 			if result >= 0 && result < len(weights) {
 				counts[result]++
 			}
@@ -996,7 +679,8 @@ func TestWeightedRandomChoice(t *testing.T) {
 	})
 
 	t.Run("very small weights", func(t *testing.T) {
-		weights := []float64{1e-10, 2e-10, 3e-10}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(1e-10), scaledFromFloat(2e-10), scaledFromFloat(3e-10)}
 		rng := rand.New(rand.NewSource(42))
 
 		// Run multiple times to check distribution
@@ -1004,7 +688,7 @@ func TestWeightedRandomChoice(t *testing.T) {
 		nTrials := 1000
 
 		for range nTrials {
-			result := weightedRandomChoice(weights, rng)
+			result := scaledWeightedRandomChoice(weights, rng)
 			if result >= 0 && result < len(weights) {
 				counts[result]++
 			}
@@ -1019,62 +703,39 @@ func TestWeightedRandomChoice(t *testing.T) {
 	})
 }
 
-// TestWeightedRandomChoice_EdgeCases tests edge cases for the weightedRandomChoice function
-func TestWeightedRandomChoice_EdgeCases(t *testing.T) {
-	t.Run("negative weights", func(t *testing.T) {
-		weights := []float64{-1.0, 2.0, -3.0}
-		rng := rand.New(rand.NewSource(42))
-
-		// Should handle negative weights gracefully
-		result := weightedRandomChoice(weights, rng)
-		if result < 0 || result >= len(weights) {
-			t.Errorf("weightedRandomChoice returned invalid index %d", result)
-		}
-	})
+// TestScaledWeightedRandomChoice_EdgeCases tests edge cases for the scaledWeightedRandomChoice function
+func TestScaledWeightedRandomChoice_EdgeCases(t *testing.T) {
+	t.Parallel()
 
 	t.Run("single non-zero weight", func(t *testing.T) {
-		weights := []float64{0.0, 5.0, 0.0}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(0.0), scaledFromFloat(5.0), scaledFromFloat(0.0)}
 		rng := rand.New(rand.NewSource(42))
 
 		// Should always return index 1
 		for range 100 {
-			result := weightedRandomChoice(weights, rng)
+			result := scaledWeightedRandomChoice(weights, rng)
 			if result != 1 {
-				t.Errorf("weightedRandomChoice returned %d, expected 1", result)
+				t.Errorf("scaledWeightedRandomChoice returned %d, expected 1", result)
 			}
 		}
 	})
 
-	t.Run("all weights are NaN", func(t *testing.T) {
-		weights := []float64{math.NaN(), math.NaN(), math.NaN()}
-		rng := rand.New(rand.NewSource(42))
-		result := weightedRandomChoice(weights, rng)
-		if result < 0 || result >= len(weights) {
-			t.Errorf("weightedRandomChoice([NaN,NaN,NaN]) = %d, want in [0,%d]", result, len(weights)-1)
-		}
-	})
-
-	t.Run("all weights are +Inf", func(t *testing.T) {
-		weights := []float64{math.Inf(1), math.Inf(1), math.Inf(1)}
-		rng := rand.New(rand.NewSource(42))
-		result := weightedRandomChoice(weights, rng)
-		if result < 0 || result >= len(weights) {
-			t.Errorf("weightedRandomChoice([Inf,Inf,Inf]) = %d, want in [0,%d]", result, len(weights)-1)
-		}
-	})
 }
 
-// TestWeightedRandomChoice_Properties tests mathematical properties of the function
-func TestWeightedRandomChoice_Properties(t *testing.T) {
+// TestScaledWeightedRandomChoice_Properties tests mathematical properties of the function
+func TestScaledWeightedRandomChoice_Properties(t *testing.T) {
+	t.Parallel()
 	t.Run("deterministic with same seed", func(t *testing.T) {
-		weights := []float64{1.0, 2.0, 3.0}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(1.0), scaledFromFloat(2.0), scaledFromFloat(3.0)}
 		rng1 := rand.New(rand.NewSource(42))
 		rng2 := rand.New(rand.NewSource(42))
 
 		// Should produce same sequence with same seed
 		for range 10 {
-			result1 := weightedRandomChoice(weights, rng1)
-			result2 := weightedRandomChoice(weights, rng2)
+			result1 := scaledWeightedRandomChoice(weights, rng1)
+			result2 := scaledWeightedRandomChoice(weights, rng2)
 			if result1 != result2 {
 				t.Errorf("Results differ with same seed: %d != %d", result1, result2)
 			}
@@ -1082,15 +743,16 @@ func TestWeightedRandomChoice_Properties(t *testing.T) {
 	})
 
 	t.Run("different seeds produce different results", func(t *testing.T) {
-		weights := []float64{1.0, 2.0, 3.0}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(1.0), scaledFromFloat(2.0), scaledFromFloat(3.0)}
 		rng1 := rand.New(rand.NewSource(42))
 		rng2 := rand.New(rand.NewSource(123))
 
 		// Should produce different sequences with different seeds
 		different := false
 		for range 10 {
-			result1 := weightedRandomChoice(weights, rng1)
-			result2 := weightedRandomChoice(weights, rng2)
+			result1 := scaledWeightedRandomChoice(weights, rng1)
+			result2 := scaledWeightedRandomChoice(weights, rng2)
 			if result1 != result2 {
 				different = true
 				break
@@ -1103,15 +765,16 @@ func TestWeightedRandomChoice_Properties(t *testing.T) {
 	})
 
 	t.Run("scaling weights preserves distribution", func(t *testing.T) {
-		weights1 := []float64{1.0, 2.0, 3.0}
-		weights2 := []float64{10.0, 20.0, 30.0} // Scaled by 10
+		t.Parallel()
+		weights1 := []scaledValue{scaledFromFloat(1.0), scaledFromFloat(2.0), scaledFromFloat(3.0)}
+		weights2 := []scaledValue{scaledFromFloat(10.0), scaledFromFloat(20.0), scaledFromFloat(30.0)} // Scaled by 10
 		rng1 := rand.New(rand.NewSource(42))
 		rng2 := rand.New(rand.NewSource(42))
 
 		// Should produce same sequence when weights are scaled
 		for range 10 {
-			result1 := weightedRandomChoice(weights1, rng1)
-			result2 := weightedRandomChoice(weights2, rng2)
+			result1 := scaledWeightedRandomChoice(weights1, rng1)
+			result2 := scaledWeightedRandomChoice(weights2, rng2)
 			if result1 != result2 {
 				t.Errorf("Results differ with scaled weights: %d != %d", result1, result2)
 			}
@@ -1119,22 +782,25 @@ func TestWeightedRandomChoice_Properties(t *testing.T) {
 	})
 
 	t.Run("valid index range", func(t *testing.T) {
-		weights := []float64{1.0, 2.0, 3.0, 4.0, 5.0}
+		t.Parallel()
+		weights := []scaledValue{scaledFromFloat(1.0), scaledFromFloat(2.0), scaledFromFloat(3.0), scaledFromFloat(4.0), scaledFromFloat(5.0)}
 		rng := rand.New(rand.NewSource(42))
 
 		// Should always return valid indices
 		for range 100 {
-			result := weightedRandomChoice(weights, rng)
+			result := scaledWeightedRandomChoice(weights, rng)
 			if result < 0 || result >= len(weights) {
-				t.Errorf("weightedRandomChoice returned invalid index %d", result)
+				t.Errorf("scaledWeightedRandomChoice returned invalid index %d", result)
 			}
 		}
 	})
 }
 
-// TestKmeans_InitKMeansPlusPlusCentroids tests the initKMeansPlusPlusCentroids function
-func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
+// TestKmeans_InitKMeansPlusPlusCentroidsWithDistances tests the initKMeansPlusPlusCentroidsWithDistances function
+func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
+	t.Parallel()
 	t.Run("no duplicate centroids", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 1.0},
 			{2.0, 2.0},
@@ -1146,7 +812,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(3, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		// Check that we got the expected number of centroids
 		if len(centroids) != 3 {
@@ -1175,6 +841,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("single cluster", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 2.0, 3.0},
 			{4.0, 5.0, 6.0},
@@ -1183,7 +850,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(1, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		if len(centroids) != 1 {
 			t.Errorf("Expected 1 centroid, got %d", len(centroids))
@@ -1199,6 +866,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("clusters equal to data points", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 1.0},
 			{2.0, 2.0},
@@ -1207,7 +875,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(3, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		if len(centroids) != 3 {
 			t.Errorf("Expected 3 centroids, got %d", len(centroids))
@@ -1238,6 +906,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("deterministic with same seed", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 1.0},
 			{2.0, 2.0},
@@ -1249,8 +918,8 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 		kmeans1 := NewWithOptions(3, WithRandomSeed(42))
 		kmeans2 := NewWithOptions(3, WithRandomSeed(42))
 
-		centroids1 := kmeans1.initKMeansPlusPlusCentroids(data)
-		centroids2 := kmeans2.initKMeansPlusPlusCentroids(data)
+		centroids1 := kmeans1.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans1.newRandomState())
+		centroids2 := kmeans2.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans2.newRandomState())
 
 		// Should produce same centroids with same seed
 		if len(centroids1) != len(centroids2) {
@@ -1265,6 +934,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("different seeds produce different results", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 1.0},
 			{2.0, 2.0},
@@ -1276,8 +946,8 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 		kmeans1 := NewWithOptions(3, WithRandomSeed(42))
 		kmeans2 := NewWithOptions(3, WithRandomSeed(123456))
 
-		centroids1 := kmeans1.initKMeansPlusPlusCentroids(data)
-		centroids2 := kmeans2.initKMeansPlusPlusCentroids(data)
+		centroids1 := kmeans1.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans1.newRandomState())
+		centroids2 := kmeans2.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans2.newRandomState())
 
 		// Should produce different centroids with different seeds
 		different := !reflect.DeepEqual(centroids1, centroids2)
@@ -1287,6 +957,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("duplicate data points", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 1.0},
 			{1.0, 1.0},
@@ -1298,7 +969,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 		kmeans := NewWithOptions(3, WithRandomSeed(42))
 
 		// This should complete successfully even if greedy selection encounters issues
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		// Verify we got the expected number of centroids
 		if len(centroids) != 3 {
@@ -1330,6 +1001,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("greedy k-means++ mode (nLocalTrials >= 2)", func(t *testing.T) {
+		t.Parallel()
 		// Тест с k=2, теперь nLocalTrials = int(2 + math.Log(2)) = 2
 		data := [][]float64{
 			{1.0, 1.0},
@@ -1341,7 +1013,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(2, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		if len(centroids) != 2 {
 			t.Errorf("Expected 2 centroids, got %d", len(centroids))
@@ -1359,6 +1031,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("greedy k-means++ mode (nLocalTrials > 1)", func(t *testing.T) {
+		t.Parallel()
 		// Test with k=5 to ensure we're in greedy mode (nLocalTrials = 3)
 		data := [][]float64{
 			{1.0, 1.0},
@@ -1373,7 +1046,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(5, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		if len(centroids) != 5 {
 			t.Errorf("Expected 5 centroids, got %d", len(centroids))
@@ -1391,6 +1064,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("high dimensional data", func(t *testing.T) {
+		t.Parallel()
 		// Test with high dimensional data points
 		data := [][]float64{
 			{1.0, 2.0, 3.0, 4.0, 5.0},
@@ -1403,7 +1077,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(3, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		if len(centroids) != 3 {
 			t.Errorf("Expected 3 centroids, got %d", len(centroids))
@@ -1428,6 +1102,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("data with negative coordinates", func(t *testing.T) {
+		t.Parallel()
 		// Test with data points containing negative coordinates
 		data := [][]float64{
 			{-1.0, -2.0},
@@ -1439,7 +1114,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(3, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		if len(centroids) != 3 {
 			t.Errorf("Expected 3 centroids, got %d", len(centroids))
@@ -1457,6 +1132,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("data with decimal coordinates", func(t *testing.T) {
+		t.Parallel()
 		// Test with data points containing decimal coordinates
 		data := [][]float64{
 			{1.5, 2.7},
@@ -1468,7 +1144,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(3, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		if len(centroids) != 3 {
 			t.Errorf("Expected 3 centroids, got %d", len(centroids))
@@ -1486,6 +1162,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("large number of clusters", func(t *testing.T) {
+		t.Parallel()
 		// Test with a larger number of clusters to stress test the algorithm
 		data := [][]float64{
 			{1.0, 1.0}, {2.0, 2.0}, {3.0, 3.0}, {4.0, 4.0}, {5.0, 5.0},
@@ -1495,7 +1172,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 
 		kmeans := NewWithOptions(8, WithRandomSeed(42))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 		if len(centroids) != 8 {
 			t.Errorf("Expected 8 centroids, got %d", len(centroids))
@@ -1513,6 +1190,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 
 	t.Run("standard k-means++ mode (nLocalTrials = 1)", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 1.0},
 			{2.0, 2.0},
@@ -1522,7 +1200,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 		}
 		kmeans := NewWithOptions(2, WithRandomSeed(42), WithNCentroidsInitTrials(1))
 
-		centroids := kmeans.initKMeansPlusPlusCentroids(data)
+		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 		if len(centroids) != 2 {
 			t.Errorf("Expected 2 centroids, got %d", len(centroids))
 		}
@@ -1537,7 +1215,7 @@ func TestKmeans_InitKMeansPlusPlusCentroids(t *testing.T) {
 	})
 }
 
-func TestCalculateTolerance(t *testing.T) {
+func TestCalculateScaledTolerance(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1569,21 +1247,21 @@ func TestCalculateTolerance(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.InDelta(t, tt.want, calculateTolerance(tt.data, tt.relativeTolerance), 1e-12)
+			require.InDelta(t, tt.want, requireFiniteScaled(t, calculateScaledTolerance(tt.data, tt.relativeTolerance)), 1e-12)
 		})
 	}
 }
 
-func TestCalculateTolerance_Invariance(t *testing.T) {
+func TestCalculateScaledTolerance_Invariance(t *testing.T) {
 	t.Parallel()
 
 	data := [][]float64{{-2, 1}, {0, 4}, {5, 9}}
 	translated := [][]float64{{98, -49}, {100, -46}, {105, -41}}
 	scaled := [][]float64{{-20, 10}, {0, 40}, {50, 90}}
 
-	tolerance := calculateTolerance(data, 1e-4)
-	require.InDelta(t, tolerance, calculateTolerance(translated, 1e-4), 1e-15)
-	require.InDelta(t, tolerance*100, calculateTolerance(scaled, 1e-4), 1e-15)
+	tolerance := requireFiniteScaled(t, calculateScaledTolerance(data, 1e-4))
+	require.InDelta(t, tolerance, requireFiniteScaled(t, calculateScaledTolerance(translated, 1e-4)), 1e-15)
+	require.InDelta(t, tolerance*100, requireFiniteScaled(t, calculateScaledTolerance(scaled, 1e-4)), 1e-15)
 }
 
 func TestConvergenceScaleInvariance(t *testing.T) {
@@ -1596,18 +1274,18 @@ func TestConvergenceScaleInvariance(t *testing.T) {
 	scaledOldCenters := [][]float64{{0, 0}}
 	scaledNewCenters := [][]float64{{1, 2}}
 
-	converged := checkConvergence(oldCenters, newCenters, calculateTolerance(data, 0.1))
-	scaledConverged := checkConvergence(
+	converged := checkScaledConvergence(oldCenters, newCenters, calculateScaledTolerance(data, 0.1))
+	scaledConverged := checkScaledConvergence(
 		scaledOldCenters,
 		scaledNewCenters,
-		calculateTolerance(scaledData, 0.1),
+		calculateScaledTolerance(scaledData, 0.1),
 	)
 
 	require.True(t, converged)
 	require.Equal(t, converged, scaledConverged)
 }
 
-func TestCheckConvergence(t *testing.T) {
+func TestCheckScaledConvergence(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1664,7 +1342,7 @@ func TestCheckConvergence(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, checkConvergence(tt.oldCenters, tt.newCenters, tt.tolerance))
+			require.Equal(t, tt.want, checkScaledConvergence(tt.oldCenters, tt.newCenters, scaledFromFloat(tt.tolerance)))
 		})
 	}
 }
@@ -1766,8 +1444,9 @@ func TestAssignPointsToClusters(t *testing.T) {
 	}
 }
 
-// Unit tests for calculateInertiaByLabels
-func TestCalculateInertiaByLabels(t *testing.T) {
+// Unit tests for calculateScaledInertiaByLabels
+func TestCalculateScaledInertiaByLabels(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		data      [][]float64
@@ -1850,6 +1529,7 @@ func TestCalculateInertiaByLabels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			defer func() {
 				recoverVal := recover()
 				if tt.wantPanic && recoverVal == nil {
@@ -1860,19 +1540,19 @@ func TestCalculateInertiaByLabels(t *testing.T) {
 				}
 			}()
 			if !tt.wantPanic {
-				got := calculateInertiaByLabels(tt.data, tt.centers, tt.labels)
+				got := requireFiniteScaled(t, calculateScaledInertiaByLabels(tt.data, tt.centers, tt.labels))
 				if math.Abs(got-tt.want) > 1e-9 {
-					t.Errorf("calculateInertiaByLabels(%v, %v, %v) = %v; want %v", tt.data, tt.centers, tt.labels, got, tt.want)
+					t.Errorf("calculateScaledInertiaByLabels(%v, %v, %v) = %v; want %v", tt.data, tt.centers, tt.labels, got, tt.want)
 				}
 			} else {
-				_ = calculateInertiaByLabels(tt.data, tt.centers, tt.labels)
+				_ = requireFiniteScaled(t, calculateScaledInertiaByLabels(tt.data, tt.centers, tt.labels))
 			}
 		})
 	}
 }
 
-// Unit tests for updateCentersLloyd
-func TestUpdateCentersLloyd(t *testing.T) {
+// Unit tests for updateCentersLloydInto
+func TestUpdateCentersLloydInto(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1962,14 +1642,16 @@ func TestUpdateCentersLloyd(t *testing.T) {
 			}()
 			if !tt.wantPanic {
 				k := &Kmeans{NClusters: tt.nClusters}
-				got := k.updateCentersLloyd(tt.data, tt.labels, tt.centers)
+				got := newCenterBuffer(k.NClusters, len(tt.centers[0]))
+				k.updateCentersLloydInto(got, make([]int, k.NClusters), make([]scaledValue, len(tt.data)), tt.data, tt.labels, tt.centers)
 				if !reflect.DeepEqual(got, tt.want) {
-					t.Errorf("updateCentersLloyd(%v, %v) = %v; want %v", tt.data, tt.labels, got, tt.want)
+					t.Errorf("updateCentersLloydInto(%v, %v) = %v; want %v", tt.data, tt.labels, got, tt.want)
 				}
 				require.Equal(t, tt.wantLabels, tt.labels)
 			} else {
 				k := &Kmeans{NClusters: tt.nClusters}
-				_ = k.updateCentersLloyd(tt.data, tt.labels, tt.centers)
+				got := newCenterBuffer(k.NClusters, len(tt.centers[0]))
+				k.updateCentersLloydInto(got, make([]int, k.NClusters), make([]scaledValue, len(tt.data)), tt.data, tt.labels, tt.centers)
 			}
 		})
 	}
@@ -1999,14 +1681,14 @@ func TestCluster_Lloyd_RecoversEmptyClusters(t *testing.T) {
 	first := cluster()
 	second := cluster()
 	require.Equal(t, first, second)
-	require.Equal(t, calculateInertiaByLabels(data, first.Centroids, first.Labels), first.Inertia)
+	require.Equal(t, requireFiniteScaled(t, calculateScaledInertiaByLabels(data, first.Centroids, first.Labels)), first.Inertia)
 
 	counts := make([]int, 3)
 	for pointIndex, label := range first.Labels {
 		counts[label]++
-		assignedDistance := squaredEuclideanDistance(data[pointIndex], first.Centroids[label])
+		assignedDistance := requireFiniteScaled(t, scaledSquaredDistance(data[pointIndex], first.Centroids[label]))
 		for _, centroid := range first.Centroids {
-			require.LessOrEqual(t, assignedDistance, squaredEuclideanDistance(data[pointIndex], centroid))
+			require.LessOrEqual(t, assignedDistance, requireFiniteScaled(t, scaledSquaredDistance(data[pointIndex], centroid)))
 		}
 	}
 	for _, count := range counts {
@@ -2691,7 +2373,7 @@ func TestCluster_Lloyd_LinearData(t *testing.T) {
 	require.Len(t, result.Labels, 30)
 }
 
-func TestInitCentroids_Random(t *testing.T) {
+func TestInitCentroidsWithDistances_Random(t *testing.T) {
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitRandom),
 		WithRandomSeed(42),
@@ -2704,7 +2386,7 @@ func TestInitCentroids_Random(t *testing.T) {
 		{7.0, 8.0},
 	}
 
-	centroids := kmeans.initCentroids(data)
+	centroids := kmeans.initCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 	require.Len(t, centroids, 2)
 	for _, centroid := range centroids {
@@ -2720,7 +2402,7 @@ func TestInitCentroids_Random(t *testing.T) {
 	}
 }
 
-func TestInitCentroids_KMeansPlusPlus(t *testing.T) {
+func TestInitCentroidsWithDistances_KMeansPlusPlus(t *testing.T) {
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -2733,7 +2415,7 @@ func TestInitCentroids_KMeansPlusPlus(t *testing.T) {
 		{12.0, 13.0},
 	}
 
-	centroids := kmeans.initCentroids(data)
+	centroids := kmeans.initCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 	require.Len(t, centroids, 2)
 	for _, centroid := range centroids {
@@ -2741,7 +2423,7 @@ func TestInitCentroids_KMeansPlusPlus(t *testing.T) {
 	}
 }
 
-func TestInitCentroids_Default(t *testing.T) {
+func TestInitCentroidsWithDistances_Default(t *testing.T) {
 	t.Parallel()
 
 	kmeans := NewWithOptions(2, WithRandomSeed(42))
@@ -2753,12 +2435,12 @@ func TestInitCentroids_Default(t *testing.T) {
 		{5.0, 6.0},
 	}
 
-	centroids := kmeans.initCentroids(data)
+	centroids := kmeans.initCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 	require.Len(t, centroids, 2)
 }
 
-func TestClusterSingle_DefaultAlgorithm(t *testing.T) {
+func TestLloydKMeans_SingleRun(t *testing.T) {
 	t.Parallel()
 
 	kmeans := NewWithOptions(2, WithRandomSeed(42))
@@ -2770,7 +2452,11 @@ func TestClusterSingle_DefaultAlgorithm(t *testing.T) {
 		{12.0, 13.0},
 	}
 
-	result, err := kmeans.clusterSingle(data)
+	result, _, converged, err := kmeans.lloydKMeans(
+		data, make([]int, len(data)), make([]int, len(data)),
+		make([]scaledValue, len(data)), kmeans.newRandomState(), calculateScaledTolerance(data, kmeans.Tol),
+	)
+	require.True(t, converged)
 
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
@@ -3241,32 +2927,41 @@ func TestCluster_InvalidInitMethod(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInitMethod)
 }
 
-func TestWeightedRandomChoice_NaN(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
-
-	weights := []float64{1.0, math.NaN(), 2.0}
-
-	result := weightedRandomChoice(weights, rng)
-
-	require.True(t, result >= 0 && result < len(weights))
+func requireFiniteScaled(t *testing.T, value scaledValue) float64 {
+	t.Helper()
+	result, representable := value.float64()
+	require.True(t, representable, "expected a finite float64 value")
+	return result
 }
 
-func TestWeightedRandomChoice_Inf(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
+func TestUpdateScaledMinDistances_IncrementalProperties(t *testing.T) {
+	t.Parallel()
 
-	weights := []float64{1.0, math.Inf(1), 2.0}
+	data := [][]float64{{1, 2, 3, 4, 5}, {6, 7, 8, 9, 10}}
+	distances := make([]scaledValue, len(data))
+	updateScaledMinDistances(distances, data, []float64{0, 0, 0, 0, 0}, true)
+	require.Equal(t, 55.0, requireFiniteScaled(t, distances[0]))
+	require.Equal(t, 330.0, requireFiniteScaled(t, distances[1]))
 
-	result := weightedRandomChoice(weights, rng)
+	updateScaledMinDistances(distances, data, []float64{5, 5, 5, 5, 5}, false)
+	require.Equal(t, 30.0, requireFiniteScaled(t, distances[0]))
+	require.Equal(t, 55.0, requireFiniteScaled(t, distances[1]))
 
-	require.True(t, result >= 0 && result < len(weights))
+	for _, point := range data {
+		updateScaledMinDistances(distances, data, point, false)
+	}
+	require.Equal(t, []scaledValue{{}, {}}, distances)
 }
 
-func TestWeightedRandomChoice_ZeroTotalWeight(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
+func TestCalculateScaledInertiaByLabels_Additivity(t *testing.T) {
+	t.Parallel()
 
-	weights := []float64{0.0, 0.0, 0.0}
-
-	result := weightedRandomChoice(weights, rng)
-
-	require.True(t, result >= 0 && result < len(weights))
+	data := [][]float64{{1, 1}, {9, 9}}
+	centers := [][]float64{{0, 0}, {10, 10}}
+	labels := []int{0, 1}
+	first := calculateScaledInertiaByLabels(data[:1], centers, labels[:1])
+	second := calculateScaledInertiaByLabels(data[1:], centers, labels[1:])
+	combined := calculateScaledInertiaByLabels(data, centers, labels)
+	require.Equal(t, 4.0, requireFiniteScaled(t, combined))
+	require.Zero(t, combined.compare(first.add(second)))
 }
