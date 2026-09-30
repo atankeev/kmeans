@@ -1,3 +1,16 @@
+// Package kmeans clusters finite, equal-dimensional samples with Lloyd's k-means
+// algorithm. Create a configuration with New or NewWithOptions, then call Cluster
+// with the samples to obtain their labels, centroids, and inertia.
+//
+// Each initialization run selects starting centroids, assigns samples to their
+// nearest centroid, and recomputes centroids until assignments or center movement
+// satisfy the convergence criterion or MaxIter is reached. Empty clusters are
+// repopulated from the farthest eligible samples.
+//
+// Cluster performs NInit independent initialization runs and selects the result
+// with the lowest internally computed inertia. Equal inertias retain the first
+// run. A selected run that reaches MaxIter without converging returns a usable
+// result with ErrConvergenceFailed; numerical overflow returns a nil result.
 package kmeans
 
 import (
@@ -9,10 +22,8 @@ import (
 	"time"
 )
 
-// Default configuration values
 const (
-	// DefaultNInit is the default number of times the k-means algorithm will be run
-	// with different centroid seeds to find the best result
+	// DefaultNInit is the default number of independent initialization runs.
 	DefaultNInit = 10
 
 	// DefaultMaxIter is the default iteration limit for each initialization run.
@@ -25,23 +36,25 @@ const (
 	DefaultTol = 1e-4
 )
 
-// InitMethod defines the centroid initialization strategy
+// InitMethod identifies a centroid initialization strategy.
 type InitMethod string
 
 const (
-	InitKMeansPlusPlus InitMethod = "k-means++" // Default
-	InitRandom         InitMethod = "random"
+	// InitKMeansPlusPlus selects initial centroids using k-means++.
+	InitKMeansPlusPlus InitMethod = "k-means++"
+	// InitRandom selects distinct sample indexes as initial centroids.
+	InitRandom InitMethod = "random"
 )
 
-// Result represents the result of K-means clustering
+// Result contains the labels, centroids, and inertia of a clustering run.
 type Result struct {
-	// Cluster labels for each data point
+	// Labels contains one cluster index for each input sample.
 	Labels []int
 
-	// Cluster centroids
+	// Centroids contains the final center of each cluster.
 	Centroids [][]float64
 
-	// Final inertia (sum of squared distances to closest centroid).
+	// Inertia is the sum of squared distances to the assigned centroids.
 	// A tiny positive inertia may round to zero; zero does not prove exact coincidence.
 	Inertia float64
 }
@@ -52,37 +65,37 @@ type Result struct {
 // Kmeans configuration or input data while a call is in progress. Each call creates its own
 // random state from RandomSeed, so equal configuration, seed, and data produce equal results.
 type Kmeans struct {
-	// Number of clusters (required parameter, no default)
+	// NClusters is the required number of clusters.
 	NClusters int
 
-	// Number of times the k-means algorithm will be run with different centroid seeds
+	// NInit is the number of independent initialization runs.
 	NInit int
 
-	// Maximum number of iterations of the k-means algorithm for a single run
+	// MaxIter limits the number of iterations in each initialization run.
 	MaxIter int
 
-	// Relative tolerance used to scale the mean per-feature variance of the input
+	// Tol is the relative tolerance used to scale the mean per-feature variance of the input
 	// data. The resulting threshold is compared with the squared Frobenius norm
 	// of the center shift between consecutive iterations.
 	Tol float64
 
-	// Method for initialization: "k-means++" (default), "random"
+	// Init selects k-means++ (the default) or random initialization.
 	Init InitMethod
 
-	// Random seed for reproducible results
+	// RandomSeed seeds each Cluster call for reproducible results.
 	RandomSeed int64
 
-	// Number of trials for k-means++ initialization
+	// NCentroidsInitTrials is the number of candidate trials for each k-means++
+	// centroid after the first.
 	NCentroidsInitTrials int
 
-	// Internal fields for validation
 	initialized bool
 }
 
-// Option is a functional option for configuring Kmeans
+// Option configures a Kmeans value when passed to NewWithOptions.
 type Option func(*Kmeans)
 
-// New creates a new Kmeans instance with required nClusters and default values for other parameters
+// New creates a Kmeans configuration with nClusters and default values for all other settings.
 func New(nClusters int) *Kmeans {
 	return &Kmeans{
 		NClusters:            nClusters,
@@ -109,14 +122,14 @@ func NewWithOptions(nClusters int, options ...Option) *Kmeans {
 	return kmeans
 }
 
-// WithNInit sets the number of initializations
+// WithNInit sets the number of independent initialization runs.
 func WithNInit(nInit int) Option {
 	return func(k *Kmeans) {
 		k.NInit = nInit
 	}
 }
 
-// WithMaxIter sets the maximum number of iterations
+// WithMaxIter sets the iteration limit for each initialization run.
 func WithMaxIter(maxIter int) Option {
 	return func(k *Kmeans) {
 		k.MaxIter = maxIter
@@ -131,7 +144,7 @@ func WithTol(tol float64) Option {
 	}
 }
 
-// WithInitMethod sets the initialization method
+// WithInitMethod sets the centroid initialization method.
 func WithInitMethod(init InitMethod) Option {
 	return func(k *Kmeans) {
 		k.Init = init
@@ -145,7 +158,8 @@ func WithRandomSeed(seed int64) Option {
 	}
 }
 
-// WithNCentroidsInitTrials sets the number of trials for centroid initialization (used in k-means++)
+// WithNCentroidsInitTrials sets the number of candidate trials for each
+// k-means++ centroid after the first.
 func WithNCentroidsInitTrials(n int) Option {
 	return func(k *Kmeans) {
 		k.NCentroidsInitTrials = n
@@ -203,12 +217,10 @@ func (k *Kmeans) Validate() error {
 // result and an error matching ErrNumericalOverflow. For configuration and data errors, the
 // returned result is also nil.
 func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
-	// Validate configuration
 	if err := k.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Validate data
 	if err := k.validateData(data); err != nil {
 		return nil, fmt.Errorf("invalid data: %w", err)
 	}
@@ -226,7 +238,6 @@ func (k *Kmeans) Cluster(data [][]float64) (*Result, error) {
 		bestConverged bool
 	)
 
-	// Run the clustering algorithm multiple times and return the best result
 	for range k.NInit {
 		result, inertia, converged, err := k.lloydKMeans(
 			data,
@@ -270,26 +281,13 @@ func (k *Kmeans) newRandomState() *rand.Rand {
 	return rand.New(rand.NewSource(k.RandomSeed))
 }
 
-// validateData validates the input data.
-//
-// This function checks if the data is empty, has consistent dimensions,
-// and if the number of clusters is not greater than the number of data points.
-//
-// Parameters:
-//
-//	data: The dataset, where each element is a point (slice of float64).
-//
-// Returns:
-//
-//	An error if the data is invalid.
-//	Nil if the data is valid.
+// validateData rejects empty data, inconsistent dimensions, non-finite coordinates,
+// missing features, and a cluster count greater than the number of samples.
 func (k *Kmeans) validateData(data [][]float64) error {
-	// Validate input data
 	if len(data) == 0 {
 		return ErrEmptyData
 	}
 
-	// Validate that all data points have the same dimensions and finite coordinates.
 	expectedDim := len(data[0])
 	for pointIndex, point := range data {
 		if len(point) != expectedDim {
@@ -319,7 +317,7 @@ func (k *Kmeans) validateData(data [][]float64) error {
 	return nil
 }
 
-// initRandomCentroids initializes cluster centroids by randomly selecting data points
+// initRandomCentroids copies samples at distinct randomly selected indexes.
 func (k *Kmeans) initRandomCentroids(data [][]float64, randomState *rand.Rand) [][]float64 {
 	centroids := make([][]float64, 0, k.NClusters)
 	usedIndices := make(map[int]struct{})
@@ -351,10 +349,8 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 
 	centroids := make([][]float64, 0, k.NClusters)
 
-	// Track already selected indices to avoid duplicates
 	usedIndices := make(map[int]struct{})
 
-	// Squared distance from each data point to the nearest selected centroid
 	if len(distances) != len(data) {
 		distances = make([]scaledValue, len(data))
 	}
@@ -369,40 +365,34 @@ func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 		updateScaledMinDistances(distances, data, centroid, len(centroids) == 1)
 	}
 
-	// Select first centroid randomly
 	addCentroid(randomState.Intn(len(data)))
 
-	// Select remaining centroids
 	for len(centroids) < k.NClusters {
-		// When nLocalTrials <= 1, use standard k-means++ initialization
+		// A single trial uses the standard distance-weighted k-means++ choice;
+		// multiple trials choose the candidate with the lowest resulting inertia.
 		if nLocalTrials <= 1 {
-			// Select next centroid with probability proportional to squared distance
 			addCentroid(selectUniqueScaledIndex(distances, usedIndices, randomState))
 		} else {
-			// Use greedy k-means++ initialization with nLocalTrials
 			bestCentroidIdx := -1
 			var bestInertia scaledValue
 
 			for range nLocalTrials {
-				// Select candidate centroid with probability proportional to squared distance
 				candidateIdx := selectUniqueScaledIndex(distances, usedIndices, randomState)
 
 				// Calculate the inertia with this candidate without materializing the
 				// candidate as a centroid: min(existing distance, distance to candidate)
 				inertia := scaledCandidateCost(distances, data, data[candidateIdx])
 
-				// If this candidate is better than the best so far, update the best centroid
 				if bestCentroidIdx == -1 || inertia.compare(bestInertia) < 0 {
 					bestInertia = inertia
 					bestCentroidIdx = candidateIdx
 				}
 			}
 
-			// Add the best centroid to the list of centroids
 			if bestCentroidIdx != -1 {
 				addCentroid(bestCentroidIdx)
 			} else {
-				// Fallback: select a random unused data point as centroid
+				// If no candidate was selected, retain progress with an unused sample.
 				addCentroid(selectUniqueScaledIndex(distances, usedIndices, randomState))
 			}
 		}
@@ -455,10 +445,8 @@ func (k *Kmeans) lloydKMeans(
 	converged := false
 
 	for range k.MaxIter {
-		// Step 1: Assign each data point to the nearest cluster center
 		labels = assignPointsToClusters(data, centers, labels)
 
-		// Step 2: Update cluster centers based on current assignments (Lloyd's update step).
 		// Empty clusters take the farthest assigned samples, ordered deterministically by
 		// descending assignment error and then ascending sample index.
 		clearCenters(next)
@@ -473,7 +461,6 @@ func (k *Kmeans) lloydKMeans(
 		labelsUnchanged := hasPreviousLabels && slices.Equal(labels, previousLabels)
 		converged = labelsUnchanged || checkScaledConvergence(centers, next, tolerance)
 
-		// Swap buffers: the just-computed centers become the current ones for the next iteration
 		centers, next = next, centers
 
 		if converged {
@@ -484,7 +471,7 @@ func (k *Kmeans) lloydKMeans(
 		hasPreviousLabels = true
 	}
 
-	// Assign points to clusters again to ensure final assignments
+	// Reassignment makes labels correspond to the final centers after the last update.
 	labels = assignPointsToClusters(data, centers, labels)
 
 	inertia := calculateScaledInertiaByLabels(data, centers, labels)
@@ -623,8 +610,8 @@ func assignPointsToClusters(data [][]float64, centers [][]float64, labels []int)
 		}
 		minDistance := scaledSquaredDistance(point, centers[bestCluster])
 
-		// Find the nearest center for each point. Keeping the current label on exact ties
-		// lets recovered clusters remain populated when samples or centers are duplicates.
+		// Keeping the current label on exact ties lets recovered clusters remain
+		// populated when samples or centers are duplicates.
 		for j, center := range centers {
 			distance := scaledSquaredDistance(point, center)
 			if distance.compare(minDistance) < 0 {

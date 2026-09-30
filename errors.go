@@ -2,18 +2,25 @@ package kmeans
 
 import "errors"
 
-// Error definitions for the kmeans package
 var (
-	ErrConfigNotInitialized        = errors.New("config not initialized")
-	ErrInvalidNInit                = errors.New("n_init must be positive")
+	// ErrConfigNotInitialized indicates that Kmeans was not created with New or NewWithOptions.
+	ErrConfigNotInitialized = errors.New("config not initialized")
+	// ErrInvalidNInit indicates that NInit is not positive.
+	ErrInvalidNInit = errors.New("n_init must be positive")
+	// ErrInvalidNCentroidsInitTrials indicates that NCentroidsInitTrials is not positive.
 	ErrInvalidNCentroidsInitTrials = errors.New("n_centroids_init_trials must be positive")
-	ErrInvalidMaxIter              = errors.New("max_iter must be positive")
-	ErrInvalidTol                  = errors.New("tol must be positive and finite")
+	// ErrInvalidMaxIter indicates that MaxIter is not positive.
+	ErrInvalidMaxIter = errors.New("max_iter must be positive")
+	// ErrInvalidTol indicates that Tol is not positive and finite.
+	ErrInvalidTol = errors.New("tol must be positive and finite")
 	// ErrInvalidInitMethod indicates that the configured centroid initialization method is unsupported.
 	ErrInvalidInitMethod = errors.New("invalid initialization method")
-	ErrInvalidK          = errors.New("k must be between 1 and number of samples, inclusive")
-	ErrEmptyData         = errors.New("data cannot be empty")
-	ErrInvalidData       = errors.New("data must be a 2D slice")
+	// ErrInvalidK indicates that NClusters is outside the valid range for the data.
+	ErrInvalidK = errors.New("k must be between 1 and number of samples, inclusive")
+	// ErrEmptyData indicates that the input contains no samples.
+	ErrEmptyData = errors.New("data cannot be empty")
+	// ErrInvalidData indicates an invalid input data shape.
+	ErrInvalidData = errors.New("data must be a 2D slice")
 	// ErrNoFeatures indicates that samples contain no features.
 	ErrNoFeatures = errors.New("data must contain at least one feature")
 	// ErrNonFiniteData indicates that a coordinate is NaN or infinite.
