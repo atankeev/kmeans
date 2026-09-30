@@ -399,25 +399,6 @@ func TestScaledSquaredDistance_Properties(t *testing.T) {
 		}
 	})
 
-	t.Run("triangle inequality for squared distances", func(t *testing.T) {
-		t.Parallel()
-		// Note: squared Euclidean distance does NOT satisfy triangle inequality
-		// This test demonstrates that property
-		p1 := []float64{0.0, 0.0}
-		p2 := []float64{3.0, 0.0}
-		p3 := []float64{3.0, 4.0}
-
-		d12 := requireFiniteScaled(t, scaledSquaredDistance(p1, p2)) // 9
-		d23 := requireFiniteScaled(t, scaledSquaredDistance(p2, p3)) // 16
-		d13 := requireFiniteScaled(t, scaledSquaredDistance(p1, p3)) // 25
-
-		// d13 > d12 + d23 (25 > 9 + 16 = 25 is false, but 25 > 9 + 16 = 25 is false)
-		// This shows that squared distance doesn't satisfy triangle inequality
-		if d13 <= d12+d23 {
-			t.Logf("Squared distance doesn't satisfy triangle inequality: %f <= %f + %f", d13, d12, d23)
-		}
-	})
-
 	t.Run("scaling property", func(t *testing.T) {
 		t.Parallel()
 		p1 := []float64{1.0, 2.0}

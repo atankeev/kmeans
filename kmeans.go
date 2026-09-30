@@ -15,8 +15,8 @@ const (
 	// with different centroid seeds to find the best result
 	DefaultNInit = 10
 
-	// DefaultMaxIter is the default maximum number of iterations of the k-means algorithm
-	// for a single run before declaring convergence
+	// DefaultMaxIter is the default iteration limit for each initialization run.
+	// Reaching the limit does not imply convergence.
 	DefaultMaxIter = 300
 
 	// DefaultTol is the default relative tolerance used to scale the mean
@@ -340,7 +340,8 @@ func (k *Kmeans) initRandomCentroids(data [][]float64, randomState *rand.Rand) [
 
 // initKMeansPlusPlusCentroidsWithDistances initializes cluster centroids using the k-means++
 // algorithm, reusing a caller-provided distances buffer (allocated once per Cluster call).
-// The buffer must have len(data) capacity; it is re-initialized per run.
+// The buffer is reused when len(distances) == len(data); otherwise a new buffer is
+// allocated. It is re-initialized for each initialization run.
 func (k *Kmeans) initKMeansPlusPlusCentroidsWithDistances(
 	data [][]float64,
 	distances []scaledValue,
@@ -426,20 +427,16 @@ func (k *Kmeans) initCentroidsWithDistances(
 	}
 }
 
-// lloydKMeans performs K-means clustering using Lloyd's algorithm.
+// lloydKMeans performs one initialization run using Lloyd's algorithm, reusing
+// the labels, previousLabels, and distances buffers. It uses randomState to
+// initialize centroids and tolerance as the squared center-shift threshold.
 //
-// The method iteratively assigns each data point to the nearest cluster center,
-// then updates the cluster centers as the mean of the assigned points, until convergence
-// or the maximum number of iterations is reached. The final assignments and centroids
-// are returned in a Result struct, along with the final inertia (sum of squared distances).
-//
-// Parameters:
-//
-//	data: The dataset, where each element is a point (slice of float64).
-//
-// Returns:
-//
-//	A pointer to Result, its inertia before public conversion, and whether the run converged.
+// It returns the final result (whose Labels shares the supplied labels buffer),
+// inertia before public conversion, and convergence status.
+// Exhausting the iteration limit without convergence returns a usable result,
+// false, and nil error; Cluster translates that status into ErrConvergenceFailed
+// for the selected run. Numerical overflow returns a nil result and an error
+// wrapping ErrNumericalOverflow.
 func (k *Kmeans) lloydKMeans(
 	data [][]float64,
 	labels []int,
@@ -614,19 +611,10 @@ func clearCenters(buf [][]float64) {
 	}
 }
 
-// assignPointsToClusters assigns each data point to the nearest cluster center.
-//
-// For each point in the dataset, this function computes the squared Euclidean distance
-// to each center and assigns the point to the cluster with the minimum distance.
-//
-// Parameters:
-//
-//	data:    The dataset, where each element is a point (slice of float64).
-//	centers: The current cluster centers, where each center is a slice of float64.
-//
-// Returns:
-//
-//	A slice of integers where the i-th element is the index of the nearest center for data point i.
+// assignPointsToClusters writes the nearest center's index for each data point
+// into labels and returns the same slice. The labels slice must have at least
+// len(data) entries. A valid existing label is retained when its center ties
+// for the minimum squared Euclidean distance.
 func assignPointsToClusters(data [][]float64, centers [][]float64, labels []int) []int {
 	for i, point := range data {
 		bestCluster := labels[i]
