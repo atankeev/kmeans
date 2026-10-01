@@ -63,15 +63,10 @@ func TestKmeans_InitRandomCentroids(t *testing.T) {
 
 			centroids := kmeans.initRandomCentroids(tt.data, rand.New(rand.NewSource(tt.randomSeed)))
 
-			if len(centroids) != tt.nClusters {
-				t.Errorf("expected %d centroids, got %d", tt.nClusters, len(centroids))
-			}
+			require.Len(t, centroids, tt.nClusters)
 
 			for i, centroid := range centroids {
-				if len(centroid) != len(tt.data[0]) {
-					t.Errorf("centroid %d has wrong dimensions: expected %d, got %d",
-						i, len(tt.data[0]), len(centroid))
-				}
+				require.Len(t, centroid, len(tt.data[0]), "centroid %d", i)
 
 				if !slices.ContainsFunc(tt.data, func(dataPoint []float64) bool {
 					return reflect.DeepEqual(centroid, dataPoint)
@@ -100,7 +95,8 @@ func sliceToString(slice []float64) string {
 	return strings.Join(result, ",")
 }
 
-func TestKmeans_InitRandomCentroids_DifferentSeeds(t *testing.T) {
+func TestKmeans_InitRandomCentroids_UsesSuppliedGenerator(t *testing.T) {
+	t.Parallel()
 	data := [][]float64{
 		{1.0, 2.0},
 		{3.0, 4.0},
@@ -108,18 +104,23 @@ func TestKmeans_InitRandomCentroids_DifferentSeeds(t *testing.T) {
 		{7.0, 8.0},
 	}
 
-	kmeans1 := NewWithOptions(2, WithRandomSeed(42))
-	kmeans2 := NewWithOptions(2, WithRandomSeed(123))
+	// Seed 42 selects indexes 1 and 3. The configured seed deliberately differs
+	// so ignoring the supplied generator changes this observation.
+	kmeans := NewWithOptions(2, WithRandomSeed(999))
+	centroids := kmeans.initRandomCentroids(data, rand.New(rand.NewSource(42)))
+	require.Equal(t, [][]float64{{3, 4}, {7, 8}}, centroids)
+}
 
-	centroids1 := kmeans1.initRandomCentroids(data, rand.New(rand.NewSource(42)))
-	centroids2 := kmeans2.initRandomCentroids(data, rand.New(rand.NewSource(123)))
+func TestKmeans_InitRandomCentroids_CopiesSelectedPoint(t *testing.T) {
+	t.Parallel()
+	data := [][]float64{{1, 2}, {3, 4}, {5, 6}, {7, 8}}
+	centroids := New(1).initRandomCentroids(data, rand.New(rand.NewSource(42)))
+	require.Equal(t, [][]float64{{3, 4}}, centroids)
 
-	centroids1Str := sliceToString(centroids1[0]) + "|" + sliceToString(centroids1[1])
-	centroids2Str := sliceToString(centroids2[0]) + "|" + sliceToString(centroids2[1])
-
-	if centroids1Str == centroids2Str {
-		t.Log("Warning: Same centroids generated with different seeds (this can happen by chance)")
-	}
+	centroids[0][0] = 30
+	require.Equal(t, []float64{3, 4}, data[1])
+	data[1][1] = 40
+	require.Equal(t, []float64{30, 4}, centroids[0])
 }
 
 func TestKmeans_InitRandomCentroids_EdgeCases(t *testing.T) {
@@ -129,26 +130,10 @@ func TestKmeans_InitRandomCentroids_EdgeCases(t *testing.T) {
 
 		centroids := kmeans.initRandomCentroids(data, rand.New(rand.NewSource(42)))
 
-		if len(centroids) != 1 {
-			t.Errorf("expected 1 centroid, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 1)
 
 		if !reflect.DeepEqual(centroids[0], data[0]) {
 			t.Errorf("expected centroid to match data point")
-		}
-	})
-
-	t.Run("data with different dimensions", func(t *testing.T) {
-		data := [][]float64{
-			{1.0, 2.0},
-			{3.0, 4.0, 5.0}, // Different dimension
-		}
-		kmeans := NewWithOptions(1, WithRandomSeed(42))
-
-		centroids := kmeans.initRandomCentroids(data, rand.New(rand.NewSource(42)))
-
-		if len(centroids) != 1 {
-			t.Errorf("expected 1 centroid, got %d", len(centroids))
 		}
 	})
 }
@@ -169,7 +154,7 @@ func TestKmeans_ValidateData(t *testing.T) {
 	})
 
 	t.Run("empty data", func(t *testing.T) {
-		var data [][]float64
+		data := [][]float64{}
 		kmeans := New(2)
 
 		err := kmeans.validateData(data)
@@ -197,9 +182,7 @@ func TestKmeans_ValidateData(t *testing.T) {
 		kmeans := New(2)
 
 		err := kmeans.validateData(data)
-		if err == nil {
-			t.Error("expected error for inconsistent dimensions")
-		}
+		require.Error(t, err)
 		if !strings.Contains(err.Error(), "dimension") {
 			t.Errorf("expected dimension error, got %v", err)
 		}
@@ -510,6 +493,14 @@ func TestUpdateScaledMinDistances(t *testing.T) {
 	}
 }
 
+func checkedWeightedChoice(t *testing.T, weights []scaledValue, rng *rand.Rand) int {
+	t.Helper()
+	index := scaledWeightedRandomChoice(weights, rng)
+	require.GreaterOrEqual(t, index, 0, "weighted choice returned a negative index")
+	require.Less(t, index, len(weights), "weighted choice returned an out-of-range index")
+	return index
+}
+
 func TestScaledWeightedRandomChoice(t *testing.T) {
 	t.Parallel()
 	t.Run("single weight", func(t *testing.T) {
@@ -517,7 +508,7 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		weights := []scaledValue{scaledFromFloat(1.0)}
 		rng := rand.New(rand.NewSource(42))
 
-		result := scaledWeightedRandomChoice(weights, rng)
+		result := checkedWeightedChoice(t, weights, rng)
 		expected := 0
 		if result != expected {
 			t.Errorf("scaledWeightedRandomChoice([1.0]) = %d, want %d", result, expected)
@@ -533,10 +524,8 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		nTrials := 1000
 
 		for range nTrials {
-			result := scaledWeightedRandomChoice(weights, rng)
-			if result >= 0 && result < len(weights) {
-				counts[result]++
-			}
+			result := checkedWeightedChoice(t, weights, rng)
+			counts[result]++
 		}
 
 		for i, count := range counts {
@@ -551,10 +540,7 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		weights := []scaledValue{scaledFromFloat(0.0), scaledFromFloat(0.0), scaledFromFloat(0.0)}
 		rng := rand.New(rand.NewSource(42))
 
-		result := scaledWeightedRandomChoice(weights, rng)
-		if result < 0 || result >= len(weights) {
-			t.Errorf("scaledWeightedRandomChoice([0,0,0]) = %d, want in [0,%d]", result, len(weights)-1)
-		}
+		checkedWeightedChoice(t, weights, rng)
 	})
 
 	t.Run("mixed zero and non-zero weights", func(t *testing.T) {
@@ -566,10 +552,8 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		nTrials := 1000
 
 		for range nTrials {
-			result := scaledWeightedRandomChoice(weights, rng)
-			if result >= 0 && result < len(weights) {
-				counts[result]++
-			}
+			result := checkedWeightedChoice(t, weights, rng)
+			counts[result]++
 		}
 
 		if counts[0] != 0 {
@@ -601,10 +585,8 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		nTrials := 1000
 
 		for range nTrials {
-			result := scaledWeightedRandomChoice(weights, rng)
-			if result >= 0 && result < len(weights) {
-				counts[result]++
-			}
+			result := checkedWeightedChoice(t, weights, rng)
+			counts[result]++
 		}
 
 		for i, count := range counts {
@@ -635,10 +617,8 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		nTrials := 1000
 
 		for range nTrials {
-			result := scaledWeightedRandomChoice(weights, rng)
-			if result >= 0 && result < len(weights) {
-				counts[result]++
-			}
+			result := checkedWeightedChoice(t, weights, rng)
+			counts[result]++
 		}
 
 		for i, count := range counts {
@@ -658,7 +638,7 @@ func TestScaledWeightedRandomChoice_EdgeCases(t *testing.T) {
 		rng := rand.New(rand.NewSource(42))
 
 		for range 100 {
-			result := scaledWeightedRandomChoice(weights, rng)
+			result := checkedWeightedChoice(t, weights, rng)
 			if result != 1 {
 				t.Errorf("scaledWeightedRandomChoice returned %d, expected 1", result)
 			}
@@ -676,8 +656,8 @@ func TestScaledWeightedRandomChoice_Properties(t *testing.T) {
 		rng2 := rand.New(rand.NewSource(42))
 
 		for range 10 {
-			result1 := scaledWeightedRandomChoice(weights, rng1)
-			result2 := scaledWeightedRandomChoice(weights, rng2)
+			result1 := checkedWeightedChoice(t, weights, rng1)
+			result2 := checkedWeightedChoice(t, weights, rng2)
 			if result1 != result2 {
 				t.Errorf("Results differ with same seed: %d != %d", result1, result2)
 			}
@@ -692,8 +672,8 @@ func TestScaledWeightedRandomChoice_Properties(t *testing.T) {
 
 		different := false
 		for range 10 {
-			result1 := scaledWeightedRandomChoice(weights, rng1)
-			result2 := scaledWeightedRandomChoice(weights, rng2)
+			result1 := checkedWeightedChoice(t, weights, rng1)
+			result2 := checkedWeightedChoice(t, weights, rng2)
 			if result1 != result2 {
 				different = true
 				break
@@ -713,8 +693,8 @@ func TestScaledWeightedRandomChoice_Properties(t *testing.T) {
 		rng2 := rand.New(rand.NewSource(42))
 
 		for range 10 {
-			result1 := scaledWeightedRandomChoice(weights1, rng1)
-			result2 := scaledWeightedRandomChoice(weights2, rng2)
+			result1 := checkedWeightedChoice(t, weights1, rng1)
+			result2 := checkedWeightedChoice(t, weights2, rng2)
 			if result1 != result2 {
 				t.Errorf("Results differ with scaled weights: %d != %d", result1, result2)
 			}
@@ -727,10 +707,7 @@ func TestScaledWeightedRandomChoice_Properties(t *testing.T) {
 		rng := rand.New(rand.NewSource(42))
 
 		for range 100 {
-			result := scaledWeightedRandomChoice(weights, rng)
-			if result < 0 || result >= len(weights) {
-				t.Errorf("scaledWeightedRandomChoice returned invalid index %d", result)
-			}
+			checkedWeightedChoice(t, weights, rng)
 		}
 	})
 }
@@ -752,9 +729,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 3 {
-			t.Errorf("Expected 3 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 3)
 
 		centroidSet := make(map[string]bool)
 		for i, centroid := range centroids {
@@ -787,9 +762,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 1 {
-			t.Errorf("Expected 1 centroid, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 1)
 
 		found := slices.ContainsFunc(data, func(dataPoint []float64) bool {
 			return reflect.DeepEqual(centroids[0], dataPoint)
@@ -811,9 +784,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 3 {
-			t.Errorf("Expected 3 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 3)
 
 		centroidSet := make(map[string]bool)
 		for i, centroid := range centroids {
@@ -900,9 +871,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 3 {
-			t.Errorf("Expected 3 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 3)
 
 		for i, centroid := range centroids {
 			found := slices.ContainsFunc(data, func(dataPoint []float64) bool {
@@ -940,9 +909,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 2 {
-			t.Errorf("Expected 2 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 2)
 
 		centroidSet := make(map[string]bool)
 		for i, centroid := range centroids {
@@ -971,9 +938,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 5 {
-			t.Errorf("Expected 5 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 5)
 
 		centroidSet := make(map[string]bool)
 		for i, centroid := range centroids {
@@ -1000,9 +965,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 3 {
-			t.Errorf("Expected 3 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 3)
 
 		for i, centroid := range centroids {
 			if len(centroid) != 5 {
@@ -1034,9 +997,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 3 {
-			t.Errorf("Expected 3 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 3)
 
 		centroidSet := make(map[string]bool)
 		for i, centroid := range centroids {
@@ -1062,9 +1023,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 3 {
-			t.Errorf("Expected 3 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 3)
 
 		centroidSet := make(map[string]bool)
 		for i, centroid := range centroids {
@@ -1088,9 +1047,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		if len(centroids) != 8 {
-			t.Errorf("Expected 8 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 8)
 
 		centroidSet := make(map[string]bool)
 		for i, centroid := range centroids {
@@ -1114,9 +1071,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 		kmeans := NewWithOptions(2, WithRandomSeed(42), WithNCentroidsInitTrials(1))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
-		if len(centroids) != 2 {
-			t.Errorf("Expected 2 centroids, got %d", len(centroids))
-		}
+		require.Len(t, centroids, 2)
 		centroidSet := make(map[string]bool)
 		for i, centroid := range centroids {
 			centroidStr := sliceToString(centroid)
@@ -1590,11 +1545,19 @@ func TestCluster_Lloyd_RecoversEmptyClusters(t *testing.T) {
 
 	first := cluster()
 	second := cluster()
+	require.NotNil(t, first)
+	require.NotNil(t, second)
+	require.Len(t, first.Centroids, 3)
+	require.Len(t, first.Labels, len(data))
+	for i, centroid := range first.Centroids {
+		require.Len(t, centroid, 2, "centroid %d", i)
+	}
 	require.Equal(t, first, second)
-	require.Equal(t, requireFiniteScaled(t, calculateScaledInertiaByLabels(data, first.Centroids, first.Labels)), first.Inertia)
 
 	counts := make([]int, 3)
 	for pointIndex, label := range first.Labels {
+		require.GreaterOrEqual(t, label, 0, "sample %d", pointIndex)
+		require.Less(t, label, len(first.Centroids), "sample %d", pointIndex)
 		counts[label]++
 		assignedDistance := requireFiniteScaled(t, scaledSquaredDistance(data[pointIndex], first.Centroids[label]))
 		for _, centroid := range first.Centroids {
@@ -1604,6 +1567,7 @@ func TestCluster_Lloyd_RecoversEmptyClusters(t *testing.T) {
 	for _, count := range counts {
 		require.Positive(t, count)
 	}
+	require.Equal(t, requireFiniteScaled(t, calculateScaledInertiaByLabels(data, first.Centroids, first.Labels)), first.Inertia)
 	for _, centroid := range first.Centroids {
 		require.Equal(t, []float64{100, 200}, centroid)
 		require.NotEqual(t, []float64{0, 0}, centroid)
@@ -1611,6 +1575,7 @@ func TestCluster_Lloyd_RecoversEmptyClusters(t *testing.T) {
 }
 
 func TestCluster_Lloyd_Basic(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -1628,12 +1593,49 @@ func TestCluster_Lloyd_Basic(t *testing.T) {
 	result, err := kmeans.Cluster(data)
 
 	require.NoError(t, err)
+	requireTwoPairPartition(t, result)
+	require.Positive(t, result.Inertia)
+}
+
+func requireTwoPairPartition(t *testing.T, result *Result) {
+	t.Helper()
+	require.NotNil(t, result)
 	require.Len(t, result.Centroids, 2)
 	require.Len(t, result.Labels, 4)
-	require.Positive(t, result.Inertia)
-
 	require.Equal(t, result.Labels[0], result.Labels[1])
 	require.Equal(t, result.Labels[2], result.Labels[3])
+	require.NotEqual(t, result.Labels[0], result.Labels[2])
+	for i, label := range result.Labels {
+		require.GreaterOrEqual(t, label, 0, "sample %d", i)
+		require.Less(t, label, len(result.Centroids), "sample %d", i)
+	}
+}
+
+func TestCluster_ResultDoesNotAliasSourceData(t *testing.T) {
+	t.Parallel()
+	data := [][]float64{{0, 0}, {2, 2}, {10, 10}, {12, 12}}
+	result, err := NewWithOptions(2, WithRandomSeed(42)).Cluster(data)
+	require.NoError(t, err)
+	requireTwoPairPartition(t, result)
+	for i, centroid := range result.Centroids {
+		require.Len(t, centroid, 2, "centroid %d", i)
+	}
+	originalCenters := slices.Clone(result.Centroids[0])
+	otherCenter := slices.Clone(result.Centroids[1])
+	originalData := make([][]float64, len(data))
+	for i, point := range data {
+		originalData[i] = slices.Clone(point)
+	}
+
+	result.Centroids[0][0] = 100
+	require.Equal(t, originalData, data)
+	require.Equal(t, otherCenter, result.Centroids[1])
+
+	for _, point := range data {
+		point[1] = 200
+	}
+	require.Equal(t, []float64{100, originalCenters[1]}, result.Centroids[0])
+	require.Equal(t, otherCenter, result.Centroids[1])
 }
 
 func TestCluster_CentroidRowsHaveIsolatedCapacity(t *testing.T) {
@@ -1922,6 +1924,7 @@ func TestCluster_Lloyd_MultipleNInit(t *testing.T) {
 }
 
 func TestCluster_Lloyd_DifferentTol(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		tol  float64
@@ -1933,6 +1936,7 @@ func TestCluster_Lloyd_DifferentTol(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			kmeans := NewWithOptions(2,
 				WithInitMethod(InitKMeansPlusPlus),
 				WithRandomSeed(42),
@@ -1950,7 +1954,7 @@ func TestCluster_Lloyd_DifferentTol(t *testing.T) {
 			result, err := kmeans.Cluster(data)
 
 			require.NoError(t, err)
-			require.Len(t, result.Centroids, 2)
+			requireTwoPairPartition(t, result)
 			require.Positive(t, result.Inertia)
 		})
 	}
@@ -2266,6 +2270,7 @@ func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
 }
 
 func TestCluster_Lloyd_LinearData(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(3,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -2279,8 +2284,37 @@ func TestCluster_Lloyd_LinearData(t *testing.T) {
 	result, err := kmeans.Cluster(data)
 
 	require.NoError(t, err)
+	require.NotNil(t, result)
 	require.Len(t, result.Centroids, 3)
 	require.Len(t, result.Labels, 30)
+	counts := make([]int, 3)
+	sums := make([]float64, 3)
+	seen := make(map[int]bool, 3)
+	previousLabel := -1
+	var inertia float64
+	for i, label := range result.Labels {
+		require.GreaterOrEqual(t, label, 0, "sample %d", i)
+		require.Less(t, label, 3, "sample %d", i)
+		require.Len(t, result.Centroids[label], 2, "centroid %d", label)
+		if label != previousLabel {
+			require.False(t, seen[label], "cluster %d is not contiguous", label)
+			seen[label] = true
+			previousLabel = label
+		}
+		counts[label]++
+		sums[label] += data[i][0]
+		for dimension, value := range data[i] {
+			delta := value - result.Centroids[label][dimension]
+			inertia += delta * delta
+		}
+	}
+	for label, count := range counts {
+		require.Positive(t, count, "cluster %d", label)
+		mean := sums[label] / float64(count)
+		require.InDelta(t, mean, result.Centroids[label][0], 1e-12, "centroid %d x", label)
+		require.InDelta(t, mean, result.Centroids[label][1], 1e-12, "centroid %d y", label)
+	}
+	require.InDelta(t, inertia, result.Inertia, 1e-10)
 }
 
 func TestInitCentroidsWithDistances_Random(t *testing.T) {

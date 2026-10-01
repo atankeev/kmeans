@@ -44,6 +44,15 @@ func assertPartitionInOriginalUnits(t *testing.T, result *kmeans.Result, origina
 	require.NotNil(t, result)
 	require.Len(t, result.Centroids, 2)
 	require.Len(t, result.Labels, len(original))
+	require.Greater(t, split, 0)
+	require.Less(t, split, len(original))
+	for i, label := range result.Labels {
+		require.GreaterOrEqual(t, label, 0, "sample %d", i)
+		require.Less(t, label, len(result.Centroids), "sample %d", i)
+	}
+	for i, centroid := range result.Centroids {
+		require.Len(t, centroid, 1, "centroid %d", i)
+	}
 	left, right := result.Labels[0], result.Labels[split]
 	require.NotEqual(t, left, right)
 	require.InDelta(t, centers[0], result.Centroids[left][0]/scale, 1e-12)
