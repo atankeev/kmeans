@@ -2406,7 +2406,9 @@ func TestLloydKMeans_SingleRun(t *testing.T) {
 	require.Len(t, result.Centroids, 2)
 }
 
+// Each Lloyd benchmark iteration measures Cluster with seed 42 and the default NInit of 10.
 func BenchmarkLloyd_KMeansPlusPlus(b *testing.B) {
+	// 1,000 two-dimensional points in two groups; 5 clusters, up to 100 iterations.
 	data := make([][]float64, 1000)
 	for i := 0; i < 1000; i++ {
 		if i < 500 {
@@ -2416,17 +2418,22 @@ func BenchmarkLloyd_KMeansPlusPlus(b *testing.B) {
 		}
 	}
 
+	kmeans := NewWithOptions(5,
+		WithInitMethod(InitKMeansPlusPlus),
+		WithMaxIter(100),
+		WithRandomSeed(42),
+	)
+	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		kmeans := NewWithOptions(5,
-			WithInitMethod(InitKMeansPlusPlus),
-			WithMaxIter(100),
-		)
-		_, _ = kmeans.Cluster(data)
+	for b.Loop() {
+		if _, err := kmeans.Cluster(data); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
 func BenchmarkLloyd_RandomInit(b *testing.B) {
+	// 1,000 two-dimensional points in two groups; 5 clusters, up to 100 iterations.
 	data := make([][]float64, 1000)
 	for i := 0; i < 1000; i++ {
 		if i < 500 {
@@ -2436,17 +2443,22 @@ func BenchmarkLloyd_RandomInit(b *testing.B) {
 		}
 	}
 
+	kmeans := NewWithOptions(5,
+		WithInitMethod(InitRandom),
+		WithMaxIter(100),
+		WithRandomSeed(42),
+	)
+	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		kmeans := NewWithOptions(5,
-			WithInitMethod(InitRandom),
-			WithMaxIter(100),
-		)
-		_, _ = kmeans.Cluster(data)
+	for b.Loop() {
+		if _, err := kmeans.Cluster(data); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
 func BenchmarkLloyd_VaryingDataSize(b *testing.B) {
+	// Two-dimensional points in two groups; 5 clusters, up to 50 iterations.
 	sizes := []int{100, 500, 1000, 5000}
 
 	for _, size := range sizes {
@@ -2463,10 +2475,14 @@ func BenchmarkLloyd_VaryingDataSize(b *testing.B) {
 			kmeans := NewWithOptions(5,
 				WithInitMethod(InitKMeansPlusPlus),
 				WithMaxIter(50),
+				WithRandomSeed(42),
 			)
+			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, _ = kmeans.Cluster(data)
+			for b.Loop() {
+				if _, err := kmeans.Cluster(data); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
