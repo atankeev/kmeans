@@ -1,13 +1,10 @@
 package kmeans
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"math/rand"
-	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 
@@ -15,6 +12,7 @@ import (
 )
 
 func TestKmeans_InitRandomCentroids(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		nClusters  int
@@ -59,40 +57,27 @@ func TestKmeans_InitRandomCentroids(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			kmeans := NewWithOptions(tt.nClusters, WithRandomSeed(tt.randomSeed))
 
 			centroids := kmeans.initRandomCentroids(tt.data, rand.New(rand.NewSource(tt.randomSeed)))
 
 			require.Len(t, centroids, tt.nClusters)
 
-			for i, centroid := range centroids {
-				require.Len(t, centroid, len(tt.data[0]), "centroid %d", i)
-
-				if !slices.ContainsFunc(tt.data, func(dataPoint []float64) bool {
-					return reflect.DeepEqual(centroid, dataPoint)
-				}) {
-					t.Errorf("centroid %d is not a copy of any data point", i)
-				}
-			}
-
-			centroidSet := make(map[string]bool)
-			for i, centroid := range centroids {
-				centroidStr := sliceToString(centroid)
-				if centroidSet[centroidStr] {
-					t.Errorf("duplicate centroid found at index %d", i)
-				}
-				centroidSet[centroidStr] = true
-			}
+			assertDistinctSourceRows(t, tt.data, centroids)
 		})
 	}
 }
 
-func sliceToString(slice []float64) string {
-	result := make([]string, 0, len(slice))
-	for _, val := range slice {
-		result = append(result, fmt.Sprintf("%.6f", val))
+func assertDistinctSourceRows(t *testing.T, data, centroids [][]float64) {
+	t.Helper()
+	seen := make([][]float64, 0, len(centroids))
+	for i, centroid := range centroids {
+		require.Len(t, centroid, len(data[0]), "centroid %d", i)
+		require.Contains(t, data, centroid, "centroid %d", i)
+		require.NotContains(t, seen, centroid, "duplicate centroid at index %d", i)
+		seen = append(seen, centroid)
 	}
-	return strings.Join(result, ",")
 }
 
 func TestKmeans_InitRandomCentroids_UsesSuppliedGenerator(t *testing.T) {
@@ -124,7 +109,9 @@ func TestKmeans_InitRandomCentroids_CopiesSelectedPoint(t *testing.T) {
 }
 
 func TestKmeans_InitRandomCentroids_EdgeCases(t *testing.T) {
+	t.Parallel()
 	t.Run("single data point", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{{1.0, 2.0, 3.0}}
 		kmeans := NewWithOptions(1, WithRandomSeed(42))
 
@@ -132,14 +119,14 @@ func TestKmeans_InitRandomCentroids_EdgeCases(t *testing.T) {
 
 		require.Len(t, centroids, 1)
 
-		if !reflect.DeepEqual(centroids[0], data[0]) {
-			t.Errorf("expected centroid to match data point")
-		}
+		require.Equal(t, data[0], centroids[0])
 	})
 }
 
 func TestKmeans_ValidateData(t *testing.T) {
+	t.Parallel()
 	t.Run("valid data", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 2.0, 3.0},
 			{4.0, 5.0, 6.0},
@@ -148,32 +135,29 @@ func TestKmeans_ValidateData(t *testing.T) {
 		kmeans := New(2)
 
 		err := kmeans.validateData(data)
-		if err != nil {
-			t.Errorf("expected no error for valid data, got %v", err)
-		}
+		require.NoError(t, err)
 	})
 
 	t.Run("empty data", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{}
 		kmeans := New(2)
 
 		err := kmeans.validateData(data)
-		if !errors.Is(err, ErrEmptyData) {
-			t.Errorf("expected ErrEmptyData, got %v", err)
-		}
+		require.ErrorIs(t, err, ErrEmptyData)
 	})
 
 	t.Run("nil data", func(t *testing.T) {
+		t.Parallel()
 		var data [][]float64
 		kmeans := New(2)
 
 		err := kmeans.validateData(data)
-		if !errors.Is(err, ErrEmptyData) {
-			t.Errorf("expected ErrEmptyData, got %v", err)
-		}
+		require.ErrorIs(t, err, ErrEmptyData)
 	})
 
 	t.Run("inconsistent dimensions", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 2.0, 3.0},
 			{4.0, 5.0}, // Different dimension
@@ -183,12 +167,11 @@ func TestKmeans_ValidateData(t *testing.T) {
 
 		err := kmeans.validateData(data)
 		require.Error(t, err)
-		if !strings.Contains(err.Error(), "dimension") {
-			t.Errorf("expected dimension error, got %v", err)
-		}
+		require.ErrorContains(t, err, "dimension")
 	})
 
 	t.Run("more clusters than data points", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 2.0},
 			{3.0, 4.0},
@@ -198,12 +181,11 @@ func TestKmeans_ValidateData(t *testing.T) {
 
 		err := kmeans.validateData(data)
 		require.ErrorIs(t, err, ErrInvalidK)
-		if !strings.Contains(err.Error(), "cannot be greater than number of samples") {
-			t.Errorf("expected cluster count error, got %v", err)
-		}
+		require.ErrorContains(t, err, "cannot be greater than number of samples")
 	})
 
 	t.Run("equal clusters and data points", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{
 			{1.0, 2.0},
 			{3.0, 4.0},
@@ -211,19 +193,16 @@ func TestKmeans_ValidateData(t *testing.T) {
 		kmeans := New(2)
 
 		err := kmeans.validateData(data)
-		if err != nil {
-			t.Errorf("expected no error for equal clusters and data points, got %v", err)
-		}
+		require.NoError(t, err)
 	})
 
 	t.Run("single data point", func(t *testing.T) {
+		t.Parallel()
 		data := [][]float64{{1.0, 2.0, 3.0}}
 		kmeans := New(1)
 
 		err := kmeans.validateData(data)
-		if err != nil {
-			t.Errorf("expected no error for single data point, got %v", err)
-		}
+		require.NoError(t, err)
 	})
 }
 
@@ -296,10 +275,7 @@ func TestScaledSquaredDistance(t *testing.T) {
 			t.Parallel()
 			result := requireFiniteScaled(t, scaledSquaredDistance(tt.p1, tt.p2))
 
-			if !isApproximatelyEqual(result, tt.expected, 1e-10) {
-				t.Errorf("scaledSquaredDistance(%v, %v) = %f, want %f",
-					tt.p1, tt.p2, result, tt.expected)
-			}
+			require.InDelta(t, tt.expected, result, 1e-10)
 		})
 	}
 }
@@ -309,19 +285,13 @@ func TestScaledSquaredDistance_EdgeCases(t *testing.T) {
 	t.Run("empty slices", func(t *testing.T) {
 		t.Parallel()
 		result := requireFiniteScaled(t, scaledSquaredDistance([]float64{}, []float64{}))
-		expected := 0.0
-		if result != expected {
-			t.Errorf("scaledSquaredDistance([], []) = %f, want %f", result, expected)
-		}
+		require.Zero(t, result)
 	})
 
 	t.Run("nil slices", func(t *testing.T) {
 		t.Parallel()
 		result := requireFiniteScaled(t, scaledSquaredDistance(nil, nil))
-		expected := 0.0
-		if result != expected {
-			t.Errorf("scaledSquaredDistance(nil, nil) = %f, want %f", result, expected)
-		}
+		require.Zero(t, result)
 	})
 
 	t.Run("very large numbers", func(t *testing.T) {
@@ -330,9 +300,7 @@ func TestScaledSquaredDistance_EdgeCases(t *testing.T) {
 		p2 := []float64{3e10, 4e10}
 		result := requireFiniteScaled(t, scaledSquaredDistance(p1, p2))
 		expected := 8e20 // (2e10)² + (2e10)² = 4e20 + 4e20 = 8e20
-		if !isApproximatelyEqual(result, expected, 1e-10) {
-			t.Errorf("scaledSquaredDistance(%v, %v) = %e, want %e", p1, p2, result, expected)
-		}
+		require.Equal(t, expected, result)
 	})
 
 	t.Run("very small numbers", func(t *testing.T) {
@@ -341,9 +309,8 @@ func TestScaledSquaredDistance_EdgeCases(t *testing.T) {
 		p2 := []float64{3e-10, 4e-10}
 		result := requireFiniteScaled(t, scaledSquaredDistance(p1, p2))
 		expected := 8e-20 // (2e-10)² + (2e-10)² = 4e-20 + 4e-20 = 8e-20
-		if !isApproximatelyEqual(result, expected, 1e-30) {
-			t.Errorf("scaledSquaredDistance(%v, %v) = %e, want %e", p1, p2, result, expected)
-		}
+		// The result is near zero, so compare with an absolute tolerance.
+		require.InDelta(t, expected, result, 1e-30)
 	})
 }
 
@@ -357,9 +324,7 @@ func TestScaledSquaredDistance_Properties(t *testing.T) {
 		d1 := requireFiniteScaled(t, scaledSquaredDistance(p1, p2))
 		d2 := requireFiniteScaled(t, scaledSquaredDistance(p2, p1))
 
-		if !isApproximatelyEqual(d1, d2, 1e-10) {
-			t.Errorf("distance should be commutative: %f != %f", d1, d2)
-		}
+		require.InDelta(t, d1, d2, 1e-10)
 	})
 
 	t.Run("scaling property", func(t *testing.T) {
@@ -375,14 +340,8 @@ func TestScaledSquaredDistance_Properties(t *testing.T) {
 		d2 := requireFiniteScaled(t, scaledSquaredDistance(scaledP1, scaledP2))
 
 		expected := d1 * scale * scale
-		if !isApproximatelyEqual(d2, expected, 1e-10) {
-			t.Errorf("scaled distance should be %f, got %f", expected, d2)
-		}
+		require.InDelta(t, expected, d2, 1e-10)
 	})
-}
-
-func isApproximatelyEqual(a, b, tolerance float64) bool {
-	return (a-b) <= tolerance && (b-a) <= tolerance
 }
 
 func TestUpdateScaledMinDistances(t *testing.T) {
@@ -509,10 +468,7 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		rng := rand.New(rand.NewSource(42))
 
 		result := checkedWeightedChoice(t, weights, rng)
-		expected := 0
-		if result != expected {
-			t.Errorf("scaledWeightedRandomChoice([1.0]) = %d, want %d", result, expected)
-		}
+		require.Zero(t, result)
 	})
 
 	t.Run("equal weights", func(t *testing.T) {
@@ -529,9 +485,7 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		}
 
 		for i, count := range counts {
-			if count == 0 {
-				t.Errorf("Index %d was never selected in %d trials", i, nTrials)
-			}
+			require.Positive(t, count, "index %d was never selected in %d trials", i, nTrials)
 		}
 	})
 
@@ -556,24 +510,14 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 			counts[result]++
 		}
 
-		if counts[0] != 0 {
-			t.Errorf("Index 0 (zero weight) was selected %d times, should be 0", counts[0])
-		}
-		if counts[2] != 0 {
-			t.Errorf("Index 2 (zero weight) was selected %d times, should be 0", counts[2])
-		}
-		if counts[1] == 0 {
-			t.Errorf("Index 1 was never selected")
-		}
-		if counts[3] == 0 {
-			t.Errorf("Index 3 was never selected")
-		}
+		require.Zero(t, counts[0])
+		require.Zero(t, counts[2])
+		require.Positive(t, counts[1])
+		require.Positive(t, counts[3])
 
 		ratio := float64(counts[3]) / float64(counts[1])
-		expectedRatio := 2.0 // weight[3] / weight[1] = 2.0 / 1.0
-		if ratio < 1.5 || ratio > 2.5 {
-			t.Errorf("Ratio of selections (index3/index1) = %f, expected around %f", ratio, expectedRatio)
-		}
+		require.GreaterOrEqual(t, ratio, 1.5)
+		require.LessOrEqual(t, ratio, 2.5)
 	})
 
 	t.Run("very large weights", func(t *testing.T) {
@@ -590,22 +534,15 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		}
 
 		for i, count := range counts {
-			if count == 0 {
-				t.Errorf("Index %d was never selected in %d trials", i, nTrials)
-			}
+			require.Positive(t, count, "index %d was never selected in %d trials", i, nTrials)
 		}
 
 		ratio1 := float64(counts[1]) / float64(counts[0])
 		ratio2 := float64(counts[2]) / float64(counts[1])
-		expectedRatio1 := 2.0 // weight[1] / weight[0] = 2e10 / 1e10
-		expectedRatio2 := 1.5 // weight[2] / weight[1] = 3e10 / 2e10
-
-		if ratio1 < 1.5 || ratio1 > 2.5 {
-			t.Errorf("Ratio of selections (index1/index0) = %f, expected around %f", ratio1, expectedRatio1)
-		}
-		if ratio2 < 1.2 || ratio2 > 1.8 {
-			t.Errorf("Ratio of selections (index2/index1) = %f, expected around %f", ratio2, expectedRatio2)
-		}
+		require.GreaterOrEqual(t, ratio1, 1.5)
+		require.LessOrEqual(t, ratio1, 2.5)
+		require.GreaterOrEqual(t, ratio2, 1.2)
+		require.LessOrEqual(t, ratio2, 1.8)
 	})
 
 	t.Run("very small weights", func(t *testing.T) {
@@ -622,9 +559,7 @@ func TestScaledWeightedRandomChoice(t *testing.T) {
 		}
 
 		for i, count := range counts {
-			if count == 0 {
-				t.Errorf("Index %d was never selected in %d trials", i, nTrials)
-			}
+			require.Positive(t, count, "index %d was never selected in %d trials", i, nTrials)
 		}
 	})
 }
@@ -639,9 +574,7 @@ func TestScaledWeightedRandomChoice_EdgeCases(t *testing.T) {
 
 		for range 100 {
 			result := checkedWeightedChoice(t, weights, rng)
-			if result != 1 {
-				t.Errorf("scaledWeightedRandomChoice returned %d, expected 1", result)
-			}
+			require.Equal(t, 1, result)
 		}
 	})
 
@@ -658,9 +591,7 @@ func TestScaledWeightedRandomChoice_Properties(t *testing.T) {
 		for range 10 {
 			result1 := checkedWeightedChoice(t, weights, rng1)
 			result2 := checkedWeightedChoice(t, weights, rng2)
-			if result1 != result2 {
-				t.Errorf("Results differ with same seed: %d != %d", result1, result2)
-			}
+			require.Equal(t, result1, result2)
 		}
 	})
 
@@ -680,9 +611,7 @@ func TestScaledWeightedRandomChoice_Properties(t *testing.T) {
 			}
 		}
 
-		if !different {
-			t.Error("Results should differ with different seeds")
-		}
+		require.True(t, different)
 	})
 
 	t.Run("scaling weights preserves distribution", func(t *testing.T) {
@@ -695,9 +624,7 @@ func TestScaledWeightedRandomChoice_Properties(t *testing.T) {
 		for range 10 {
 			result1 := checkedWeightedChoice(t, weights1, rng1)
 			result2 := checkedWeightedChoice(t, weights2, rng2)
-			if result1 != result2 {
-				t.Errorf("Results differ with scaled weights: %d != %d", result1, result2)
-			}
+			require.Equal(t, result1, result2)
 		}
 	})
 
@@ -731,23 +658,8 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		require.Len(t, centroids, 3)
 
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 
-		for i, centroid := range centroids {
-			found := slices.ContainsFunc(data, func(dataPoint []float64) bool {
-				return reflect.DeepEqual(centroid, dataPoint)
-			})
-			if !found {
-				t.Errorf("Centroid %d is not a copy of any data point: %v", i, centroid)
-			}
-		}
 	})
 
 	t.Run("single cluster", func(t *testing.T) {
@@ -764,12 +676,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		require.Len(t, centroids, 1)
 
-		found := slices.ContainsFunc(data, func(dataPoint []float64) bool {
-			return reflect.DeepEqual(centroids[0], dataPoint)
-		})
-		if !found {
-			t.Errorf("Centroid is not a copy of any data point: %v", centroids[0])
-		}
+		require.Contains(t, data, centroids[0])
 	})
 
 	t.Run("clusters equal to data points", func(t *testing.T) {
@@ -786,26 +693,9 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		require.Len(t, centroids, 3)
 
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 
-		dataSet := make(map[string]bool)
-		for _, dataPoint := range data {
-			dataSet[sliceToString(dataPoint)] = true
-		}
-
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if !dataSet[centroidStr] {
-				t.Errorf("Centroid %d is not a data point: %v", i, centroid)
-			}
-		}
+		require.ElementsMatch(t, data, centroids)
 	})
 
 	t.Run("deterministic with same seed", func(t *testing.T) {
@@ -824,15 +714,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 		centroids1 := kmeans1.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans1.newRandomState())
 		centroids2 := kmeans2.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans2.newRandomState())
 
-		if len(centroids1) != len(centroids2) {
-			t.Errorf("Different number of centroids: %d vs %d", len(centroids1), len(centroids2))
-		}
-
-		for i := range centroids1 {
-			if !reflect.DeepEqual(centroids1[i], centroids2[i]) {
-				t.Errorf("Centroids differ at index %d: %v vs %v", i, centroids1[i], centroids2[i])
-			}
-		}
+		require.Equal(t, centroids1, centroids2)
 	})
 
 	t.Run("different seeds produce different results", func(t *testing.T) {
@@ -851,10 +733,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 		centroids1 := kmeans1.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans1.newRandomState())
 		centroids2 := kmeans2.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans2.newRandomState())
 
-		different := !reflect.DeepEqual(centroids1, centroids2)
-		if !different {
-			t.Error("Centroids should differ with different seeds")
-		}
+		require.NotEqual(t, centroids1, centroids2)
 	})
 
 	t.Run("duplicate data points", func(t *testing.T) {
@@ -867,32 +746,12 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{10.0, 10.0},
 		}
 
-		kmeans := NewWithOptions(3, WithRandomSeed(42))
+		kmeans := NewWithOptions(len(data), WithRandomSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
-		require.Len(t, centroids, 3)
-
-		for i, centroid := range centroids {
-			found := slices.ContainsFunc(data, func(dataPoint []float64) bool {
-				return reflect.DeepEqual(centroid, dataPoint)
-			})
-			if !found {
-				t.Errorf("Centroid %d is not a copy of any data point: %v", i, centroid)
-			}
-		}
-
-		centroidSet := make(map[string]bool)
-		for _, centroid := range centroids {
-			centroidSet[sliceToString(centroid)] = true
-		}
-		uniqueDataSet := make(map[string]bool)
-		for _, dataPoint := range data {
-			uniqueDataSet[sliceToString(dataPoint)] = true
-		}
-		if len(centroidSet) > len(uniqueDataSet) {
-			t.Errorf("More unique centroids than unique data points")
-		}
+		require.Len(t, centroids, len(data))
+		require.ElementsMatch(t, data, centroids)
 	})
 
 	t.Run("greedy k-means++ mode (nLocalTrials >= 2)", func(t *testing.T) {
@@ -911,14 +770,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		require.Len(t, centroids, 2)
 
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 	})
 
 	t.Run("greedy k-means++ mode (nLocalTrials > 1)", func(t *testing.T) {
@@ -940,14 +792,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		require.Len(t, centroids, 5)
 
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 	})
 
 	t.Run("high dimensional data", func(t *testing.T) {
@@ -968,19 +813,10 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 		require.Len(t, centroids, 3)
 
 		for i, centroid := range centroids {
-			if len(centroid) != 5 {
-				t.Errorf("Centroid %d has wrong dimension: expected 5, got %d", i, len(centroid))
-			}
+			require.Len(t, centroid, 5, "centroid %d", i)
 		}
 
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 	})
 
 	t.Run("data with negative coordinates", func(t *testing.T) {
@@ -999,14 +835,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		require.Len(t, centroids, 3)
 
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 	})
 
 	t.Run("data with decimal coordinates", func(t *testing.T) {
@@ -1025,14 +854,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		require.Len(t, centroids, 3)
 
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 	})
 
 	t.Run("large number of clusters", func(t *testing.T) {
@@ -1049,14 +871,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		require.Len(t, centroids, 8)
 
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 	})
 
 	t.Run("standard k-means++ mode (nLocalTrials = 1)", func(t *testing.T) {
@@ -1072,14 +887,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 		require.Len(t, centroids, 2)
-		centroidSet := make(map[string]bool)
-		for i, centroid := range centroids {
-			centroidStr := sliceToString(centroid)
-			if centroidSet[centroidStr] {
-				t.Errorf("Duplicate centroid found at index %d: %v", i, centroid)
-			}
-			centroidSet[centroidStr] = true
-		}
+		assertDistinctSourceRows(t, data, centroids)
 	})
 }
 
@@ -1216,6 +1024,7 @@ func TestCheckScaledConvergence(t *testing.T) {
 }
 
 func TestAssignPointsToClusters(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		data      [][]float64
@@ -1287,26 +1096,13 @@ func TestAssignPointsToClusters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				recoverVal := recover()
-				if tt.wantPanic && recoverVal == nil {
-					t.Errorf("expected panic, but did not panic")
-				}
-				if !tt.wantPanic && recoverVal != nil {
-					t.Errorf("unexpected panic: %v", recoverVal)
-				}
-			}()
-
+			t.Parallel()
 			l := make([]int, len(tt.data))
-
-			if !tt.wantPanic {
-				got := assignPointsToClusters(tt.data, tt.centers, l)
-				if !reflect.DeepEqual(got, tt.want) {
-					t.Errorf("assignPointsToClusters(%v, %v) = %v; want %v", tt.data, tt.centers, got, tt.want)
-				}
-			} else {
-				_ = assignPointsToClusters(tt.data, tt.centers, l)
+			if tt.wantPanic {
+				require.Panics(t, func() { assignPointsToClusters(tt.data, tt.centers, l) })
+				return
 			}
+			require.Equal(t, tt.want, assignPointsToClusters(tt.data, tt.centers, l))
 		})
 	}
 }
@@ -1396,23 +1192,12 @@ func TestCalculateScaledInertiaByLabels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			defer func() {
-				recoverVal := recover()
-				if tt.wantPanic && recoverVal == nil {
-					t.Errorf("expected panic, but did not panic")
-				}
-				if !tt.wantPanic && recoverVal != nil {
-					t.Errorf("unexpected panic: %v", recoverVal)
-				}
-			}()
-			if !tt.wantPanic {
-				got := requireFiniteScaled(t, calculateScaledInertiaByLabels(tt.data, tt.centers, tt.labels))
-				if math.Abs(got-tt.want) > 1e-9 {
-					t.Errorf("calculateScaledInertiaByLabels(%v, %v, %v) = %v; want %v", tt.data, tt.centers, tt.labels, got, tt.want)
-				}
-			} else {
-				_ = requireFiniteScaled(t, calculateScaledInertiaByLabels(tt.data, tt.centers, tt.labels))
+			if tt.wantPanic {
+				require.Panics(t, func() { calculateScaledInertiaByLabels(tt.data, tt.centers, tt.labels) })
+				return
 			}
+			got := requireFiniteScaled(t, calculateScaledInertiaByLabels(tt.data, tt.centers, tt.labels))
+			require.InDelta(t, tt.want, got, 1e-9)
 		})
 	}
 }
@@ -1495,29 +1280,18 @@ func TestUpdateCentersLloydInto(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
-			defer func() {
-				recoverVal := recover()
-				if tt.wantPanic && recoverVal == nil {
-					t.Errorf("expected panic, but did not panic")
-				}
-				if !tt.wantPanic && recoverVal != nil {
-					t.Errorf("unexpected panic: %v", recoverVal)
-				}
-			}()
-			if !tt.wantPanic {
-				k := &Kmeans{NClusters: tt.nClusters}
-				got := newCenterBuffer(k.NClusters, len(tt.centers[0]))
-				k.updateCentersLloydInto(got, make([]int, k.NClusters), make([]scaledValue, len(tt.data)), tt.data, tt.labels, tt.centers)
-				if !reflect.DeepEqual(got, tt.want) {
-					t.Errorf("updateCentersLloydInto(%v, %v) = %v; want %v", tt.data, tt.labels, got, tt.want)
-				}
-				require.Equal(t, tt.wantLabels, tt.labels)
-			} else {
-				k := &Kmeans{NClusters: tt.nClusters}
-				got := newCenterBuffer(k.NClusters, len(tt.centers[0]))
+			k := &Kmeans{NClusters: tt.nClusters}
+			got := newCenterBuffer(k.NClusters, len(tt.centers[0]))
+			run := func() {
 				k.updateCentersLloydInto(got, make([]int, k.NClusters), make([]scaledValue, len(tt.data)), tt.data, tt.labels, tt.centers)
 			}
+			if tt.wantPanic {
+				require.Panics(t, run)
+				return
+			}
+			require.NotPanics(t, run)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantLabels, tt.labels)
 		})
 	}
 }
@@ -1741,6 +1515,7 @@ func requireConcurrentCallsAreReproducible(t *testing.T, kmeans *Kmeans, data []
 }
 
 func TestCluster_Lloyd_KMeansPlusPlusInit(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(123),
@@ -1773,6 +1548,7 @@ func TestCluster_Lloyd_KMeansPlusPlusInit(t *testing.T) {
 }
 
 func TestCluster_Lloyd_RandomInit(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitRandom),
 		WithRandomSeed(456),
@@ -1794,6 +1570,7 @@ func TestCluster_Lloyd_RandomInit(t *testing.T) {
 }
 
 func TestCluster_Lloyd_Convergence(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -1902,6 +1679,7 @@ func TestCluster_Lloyd_ConvergesOnLastIteration(t *testing.T) {
 }
 
 func TestCluster_Lloyd_MultipleNInit(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitRandom),
 		WithRandomSeed(42),
@@ -1961,6 +1739,7 @@ func TestCluster_Lloyd_DifferentTol(t *testing.T) {
 }
 
 func TestCluster_Lloyd_SingleDimension(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -2157,6 +1936,7 @@ func TestCluster_LargeCommonOffsetHasRepresentableResult(t *testing.T) {
 }
 
 func TestCluster_Lloyd_SmallNumbers(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -2250,6 +2030,7 @@ func TestCluster_EmptyAndNonEmptySamplesHaveInconsistentDimensions(t *testing.T)
 }
 
 func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -2318,6 +2099,7 @@ func TestCluster_Lloyd_LinearData(t *testing.T) {
 }
 
 func TestInitCentroidsWithDistances_Random(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitRandom),
 		WithRandomSeed(42),
@@ -2333,20 +2115,11 @@ func TestInitCentroidsWithDistances_Random(t *testing.T) {
 	centroids := kmeans.initCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
 	require.Len(t, centroids, 2)
-	for _, centroid := range centroids {
-		require.Len(t, centroid, 2)
-		found := false
-		for _, point := range data {
-			if reflect.DeepEqual(centroid, point) {
-				found = true
-				break
-			}
-		}
-		require.True(t, found, "centroid should be from data points")
-	}
+	assertDistinctSourceRows(t, data, centroids)
 }
 
 func TestInitCentroidsWithDistances_KMeansPlusPlus(t *testing.T) {
+	t.Parallel()
 	kmeans := NewWithOptions(2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithRandomSeed(42),
@@ -2629,6 +2402,7 @@ func TestFunctionalOptionLastValueWins(t *testing.T) {
 }
 
 func TestCluster_ValidationErrors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		kmeans  *Kmeans
@@ -2690,6 +2464,7 @@ func TestCluster_ValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := tt.kmeans.Cluster(tt.data)
 
 			if tt.wantErr {
@@ -2774,6 +2549,7 @@ func TestErrInvalidKMessage(t *testing.T) {
 }
 
 func TestValidate_NInit(t *testing.T) {
+	t.Parallel()
 	k := &Kmeans{
 		NClusters:            2,
 		NInit:                0,
@@ -2789,6 +2565,7 @@ func TestValidate_NInit(t *testing.T) {
 }
 
 func TestValidate_MaxIter(t *testing.T) {
+	t.Parallel()
 	k := &Kmeans{
 		NClusters:            2,
 		NInit:                1,
@@ -2804,6 +2581,7 @@ func TestValidate_MaxIter(t *testing.T) {
 }
 
 func TestValidate_Tol(t *testing.T) {
+	t.Parallel()
 	k := &Kmeans{
 		NClusters:            2,
 		NInit:                1,
@@ -2819,6 +2597,7 @@ func TestValidate_Tol(t *testing.T) {
 }
 
 func TestValidate_NCentroidsInitTrials(t *testing.T) {
+	t.Parallel()
 	k := &Kmeans{
 		NClusters:            2,
 		NInit:                1,
