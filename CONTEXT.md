@@ -25,6 +25,10 @@ _Avoid_: Partial result, successful result
 One independent execution of the clustering algorithm from an initialized set of centroids; multiple runs may be compared to select the lowest-inertia result.
 _Avoid_: Attempt, retry
 
+**Reproducibility**:
+Repeatability of the clustering result given identical ordered data, random seed, and configuration within the same library version and execution environment, including multiple initialization runs.
+_Avoid_: Cross-version determinism, cross-platform determinism
+
 **Inertia**:
 The sum of squared distances from samples to their assigned centroids. A reported inertia of zero may reflect rounding of a very small positive value rather than exact coincidence of samples and centroids.
 _Avoid_: Cost, score

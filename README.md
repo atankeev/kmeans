@@ -43,10 +43,10 @@ func main() {
     }
     
     // Create K-means instance with 2 clusters
-    kmeans := kmeans.New(2)
+    km := kmeans.New(2)
     
     // Perform clustering
-    result, err := kmeans.Cluster(data)
+    result, err := km.Cluster(data)
     if err != nil {
         log.Fatal(err)
     }
@@ -67,14 +67,18 @@ All samples must have the same number of features.
 
 ```go
 // Create K-means with custom options
-kmeans := kmeans.NewWithOptions(3,
+km := kmeans.NewWithOptions(3,
     kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
     kmeans.WithMaxIter(100),
     kmeans.WithTol(1e-6),
     kmeans.WithRandomSeed(42),
 )
 
-result, err := kmeans.Cluster(data)
+result, err := km.Cluster(data)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Cluster labels: %v\n", result.Labels)
 ```
 
 ### Using Different Initialization Methods
@@ -155,8 +159,12 @@ data := [][]float64{
     {1, 2}, {1.5, 1.8}, {5, 8}, {8, 8}, {1, 0.6}, {9, 11},
 }
 
-kmeans := kmeans.New(2)
-result, err := kmeans.Cluster(data)
+km := kmeans.New(2)
+result, err := km.Cluster(data)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Cluster labels: %v\n", result.Labels)
 ```
 
 ### High-Dimensional Data
@@ -167,24 +175,33 @@ data := [][]float64{
     {1, 2, 3}, {1.5, 1.8, 2.5}, {5, 8, 9}, {8, 8, 7},
 }
 
-kmeans := kmeans.NewWithOptions(2,
+km := kmeans.NewWithOptions(2,
     kmeans.WithMaxIter(200),
 )
-result, err := kmeans.Cluster(data)
+result, err := km.Cluster(data)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Cluster labels: %v\n", result.Labels)
 ```
 
 ### Reproducible Results
 
 ```go
-kmeans := kmeans.NewWithOptions(3,
+km := kmeans.NewWithOptions(3,
     kmeans.WithRandomSeed(42),
-    kmeans.WithNInit(1), // Single run for reproducibility
+    kmeans.WithNInit(10), // Multiple initialization runs are reproducible too
 )
-result, err := kmeans.Cluster(data)
+result, err := km.Cluster(data)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Cluster labels: %v\n", result.Labels)
 ```
 
-Using the same seed, options, and data produces the same result on every call, including
-concurrent calls on the same `Kmeans` instance.
+Within the same library version and execution environment, identical ordered data, random
+seed, and configuration produce the same result on every call, including concurrent calls
+on the same `Kmeans` instance. This also applies when `NInit > 1`.
 
 ### Concurrency
 
@@ -207,28 +224,51 @@ Concurrent mutation of exported configuration fields or input slices is not supp
 The library provides comprehensive error handling:
 
 ```go
-result, err := kmeans.Cluster(data)
-if errors.Is(err, kmeans.ErrConvergenceFailed) {
-    // The final labels, centroids, and inertia are still available as an approximation.
-    log.Printf("Clustering reached MaxIter; using result with inertia %.2f", result.Inertia)
-} else if err != nil {
-    switch {
-    case errors.Is(err, kmeans.ErrEmptyData):
-        log.Fatal("Empty dataset provided")
-    case errors.Is(err, kmeans.ErrNoFeatures):
-        log.Fatal("Dataset samples must contain at least one feature")
-    case errors.Is(err, kmeans.ErrInvalidK):
-        log.Fatal("Invalid number of clusters")
-    case errors.Is(err, kmeans.ErrInvalidTol):
-        log.Fatal("Tolerance must be positive and finite")
-    case errors.Is(err, kmeans.ErrNonFiniteData):
-        log.Fatal("Dataset contains a NaN or infinite coordinate")
-    case errors.Is(err, kmeans.ErrNumericalOverflow):
-        // Numerical overflow always returns a nil result.
-        log.Fatal("A required clustering result cannot be represented safely")
-    default:
-        log.Fatal("Clustering failed:", err)
+package main
+
+import (
+    "errors"
+    "fmt"
+    "log"
+
+    "github.com/atankeev/kmeans"
+)
+
+func main() {
+    data := [][]float64{
+        {1, 2}, {1.5, 1.8}, {5, 8}, {8, 8}, {1, 0.6}, {9, 11},
     }
+    km := kmeans.New(2)
+
+    result, err := km.Cluster(data)
+    if err != nil && !errors.Is(err, kmeans.ErrConvergenceFailed) {
+        switch {
+        case errors.Is(err, kmeans.ErrEmptyData):
+            log.Print("empty dataset provided")
+        case errors.Is(err, kmeans.ErrNoFeatures):
+            log.Print("dataset samples must contain at least one feature")
+        case errors.Is(err, kmeans.ErrInvalidK):
+            log.Print("invalid number of clusters")
+        case errors.Is(err, kmeans.ErrInvalidTol):
+            log.Print("tolerance must be positive and finite")
+        case errors.Is(err, kmeans.ErrNonFiniteData):
+            log.Print("dataset contains a NaN or infinite coordinate")
+        case errors.Is(err, kmeans.ErrNumericalOverflow):
+            // Numerical overflow always returns a nil result.
+            log.Print("a required clustering result cannot be represented safely")
+        default:
+            log.Printf("clustering failed: %v", err)
+        }
+        return
+    }
+    if errors.Is(err, kmeans.ErrConvergenceFailed) {
+        // The final labels, centroids, and inertia are still usable without convergence.
+        log.Printf("clustering reached MaxIter; using result with inertia %.2f", result.Inertia)
+    }
+
+    fmt.Printf("Cluster labels: %v\n", result.Labels)
+    fmt.Printf("Centroids: %v\n", result.Centroids)
+    fmt.Printf("Inertia: %.2f\n", result.Inertia)
 }
 ```
 
