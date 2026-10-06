@@ -1,48 +1,31 @@
-package kmeans
+package kmeans_test
 
 import (
+	"github.com/atankeev/kmeans"
+	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestCluster_ConcurrentCallsAreReproducible(t *testing.T) {
 	t.Parallel()
-
-	data := [][]float64{
-		{0, 0}, {0, 1}, {1, 0},
-		{8, 8}, {8, 9}, {9, 8},
-		{16, 0}, {16, 1}, {17, 0},
-	}
-	kmeans := NewWithOptions(3, WithRandomSeed(42), WithNInit(1))
-	requireConcurrentCallsAreReproducible(t, kmeans, data)
+	requireConcurrentCallsAreReproducible(t, 3, [][]float64{{0, 0}, {0, 1}, {1, 0}, {8, 8}, {8, 9}, {9, 8}, {16, 0}, {16, 1}, {17, 0}}, kmeans.WithSeed(42), kmeans.WithRuns(10))
 }
 
 func TestCluster_ScaledArithmeticConcurrentCallsAreReproducible(t *testing.T) {
 	t.Parallel()
-
-	data := [][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}}
-	kmeans := NewWithOptions(2,
-		WithRandomSeed(3),
-		WithNInit(1),
-		WithMaxIter(1),
-	)
-	requireConcurrentCallsAreReproducible(t, kmeans, data)
+	requireConcurrentCallsAreReproducible(t, 2, [][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}}, kmeans.WithSeed(3), kmeans.WithRuns(1), kmeans.WithMaxIterations(1))
 }
 
-func requireConcurrentCallsAreReproducible(t *testing.T, kmeans *Kmeans, data [][]float64) {
+func requireConcurrentCallsAreReproducible(t *testing.T, k int, data [][]float64, opts ...kmeans.Option) {
 	t.Helper()
-
-	want, err := kmeans.Cluster(data)
+	want, err := kmeans.Cluster(data, k, opts...)
 	require.NoError(t, err)
-
 	const callCount = 16
 	type outcome struct {
-		result *Result
+		result *kmeans.Result
 		err    error
 	}
-
 	start := make(chan struct{})
 	outcomes := make(chan outcome, callCount)
 	var wg sync.WaitGroup
@@ -51,18 +34,18 @@ func requireConcurrentCallsAreReproducible(t *testing.T, kmeans *Kmeans, data []
 		go func() {
 			defer wg.Done()
 			<-start
-
-			result, clusterErr := kmeans.Cluster(data)
-			outcomes <- outcome{result: result, err: clusterErr}
+			result, err := kmeans.Cluster(data, k, opts...)
+			outcomes <- outcome{result, err}
 		}()
 	}
-
 	close(start)
 	wg.Wait()
 	close(outcomes)
-
 	for outcome := range outcomes {
 		require.NoError(t, outcome.err)
 		require.Equal(t, want, outcome.result)
 	}
+	again, err := kmeans.Cluster(data, k, opts...)
+	require.NoError(t, err)
+	require.Equal(t, want, again)
 }

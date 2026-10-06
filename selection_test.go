@@ -21,9 +21,7 @@ func TestCluster_SelectsLowestInertiaBeforePublicUnderflow(t *testing.T) {
 					for i, value := range original {
 						data[i] = []float64{value * scale}
 					}
-					result, err := kmeans.NewWithOptions(2,
-						kmeans.WithInitMethod(method), kmeans.WithRandomSeed(0), kmeans.WithNInit(nInit),
-					).Cluster(data)
+					result, err := kmeans.Cluster(data, 2, kmeans.WithInitMethod(method), kmeans.WithSeed(0), kmeans.WithRuns(nInit))
 					require.NoError(t, err)
 					if nInit == 1 {
 						assertPartitionInOriginalUnits(t, result, original, scale, 4, []float64{1.75, 12}, 40.75)
@@ -85,8 +83,8 @@ func TestCluster_FourPointPartitionAtTinyScale(t *testing.T) {
 					for i, value := range original {
 						data[i] = []float64{value * scale}
 					}
-					result, err := kmeans.NewWithOptions(2, kmeans.WithInitMethod(method),
-						kmeans.WithRandomSeed(42), kmeans.WithNInit(nInit)).Cluster(data)
+					result, err := kmeans.Cluster(data, 2, kmeans.WithInitMethod(method),
+						kmeans.WithSeed(42), kmeans.WithRuns(nInit))
 					require.NoError(t, err)
 					assertPartitionInOriginalUnits(t, result, original, scale, 2, []float64{0.5, 9.5}, 1)
 				})
@@ -100,8 +98,8 @@ func TestCluster_EqualInertiaRetainsFirstRun(t *testing.T) {
 	data := [][]float64{{0}, {1}, {9}, {10}}
 	run := func(seed int64, nInit int) *kmeans.Result {
 		t.Helper()
-		result, err := kmeans.NewWithOptions(2, kmeans.WithInitMethod(kmeans.InitRandom),
-			kmeans.WithRandomSeed(seed), kmeans.WithNInit(nInit)).Cluster(data)
+		result, err := kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitRandom),
+			kmeans.WithSeed(seed), kmeans.WithRuns(nInit))
 		require.NoError(t, err)
 		require.Equal(t, 1.0, result.Inertia)
 		return result
@@ -121,17 +119,21 @@ func TestCluster_LowerInertiaNonConvergedRunWins(t *testing.T) {
 	t.Parallel()
 	data := [][]float64{{18}, {13}, {0}, {8}, {25}, {24}, {24}}
 	run := func(nInit int) (*kmeans.Result, error) {
-		return kmeans.NewWithOptions(2, kmeans.WithInitMethod(kmeans.InitRandom),
-			kmeans.WithRandomSeed(0), kmeans.WithMaxIter(2), kmeans.WithNInit(nInit)).Cluster(data)
+		return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitRandom),
+			kmeans.WithSeed(0), kmeans.WithMaxIterations(2), kmeans.WithRuns(nInit))
 	}
 	first, err := run(1)
 	require.NoError(t, err)
+	require.True(t, first.Converged)
+	require.Equal(t, 2, first.Iterations)
 	require.InDelta(t, 138.8, first.Inertia, 1e-12)
 	require.Equal(t, []int{0, 0, 1, 1, 0, 0, 0}, first.Labels)
 	require.Equal(t, [][]float64{{20.8}, {4}}, first.Centroids)
 	best, err := run(2)
-	require.ErrorIs(t, err, kmeans.ErrConvergenceFailed)
+	require.NoError(t, err)
 	require.NotNil(t, best)
+	require.False(t, best.Converged)
+	require.Equal(t, 2, best.Iterations)
 	require.Equal(t, 116.75, best.Inertia)
 	require.Equal(t, []int{1, 0, 0, 0, 1, 1, 1}, best.Labels)
 	require.Equal(t, [][]float64{{7}, {22.75}}, best.Centroids)
@@ -149,11 +151,13 @@ func TestCluster_TinyMovementDoesNotPrematurelyConverge(t *testing.T) {
 				data[i] = []float64{value * scale}
 			}
 			run := func(maxIter int) (*kmeans.Result, error) {
-				return kmeans.NewWithOptions(2, kmeans.WithInitMethod(kmeans.InitRandom),
-					kmeans.WithRandomSeed(0), kmeans.WithNInit(1), kmeans.WithMaxIter(maxIter)).Cluster(data)
+				return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitRandom),
+					kmeans.WithSeed(0), kmeans.WithRuns(1), kmeans.WithMaxIterations(maxIter))
 			}
 			first, err := run(1)
-			require.ErrorIs(t, err, kmeans.ErrConvergenceFailed)
+			require.NoError(t, err)
+			require.False(t, first.Converged)
+			require.Equal(t, 1, first.Iterations)
 			assertPartitionInOriginalUnits(t, first, original, scale, 3, []float64{0, 6.2}, 109.12)
 			refined, err := run(300)
 			require.NoError(t, err)

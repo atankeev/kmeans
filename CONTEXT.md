@@ -18,8 +18,8 @@ Rounding a positive inertia to zero because it is too small to represent is not 
 _Avoid_: Invalid data, convergence failure
 
 **Usable non-converged result**:
-A numerically valid clustering result returned with a convergence failure after the iteration limit is reached.
-_Avoid_: Partial result, successful result
+A successful clustering result that reaches the iteration limit without satisfying the convergence criterion.
+_Avoid_: Partial result, convergence failure
 
 **Initialization run**:
 One independent execution of the clustering algorithm from an initialized set of centroids; multiple runs may be compared to select the lowest-inertia result.

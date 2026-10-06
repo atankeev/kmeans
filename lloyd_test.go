@@ -168,7 +168,7 @@ func TestUpdateCentersLloydInto(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			k := &Kmeans{NClusters: tt.nClusters}
+			k := &config{NClusters: tt.nClusters}
 			got := newCenterBuffer(k.NClusters, len(tt.centers[0]))
 			run := func() {
 				k.updateCentersLloydInto(got, make([]int, k.NClusters), make([]scaledValue, len(tt.data)), tt.data, tt.labels, tt.centers)
@@ -194,12 +194,12 @@ func TestCluster_Lloyd_RecoversEmptyClusters(t *testing.T) {
 		{100, 200},
 	}
 	cluster := func() *Result {
-		kmeans := NewWithOptions(3,
-			WithInitMethod(InitKMeansPlusPlus),
-			WithRandomSeed(42),
-			WithNInit(1),
-		)
-		result, err := kmeans.Cluster(data)
+		cluster := func(data [][]float64) (*Result, error) {
+			return Cluster(data, 3, WithInitMethod(InitKMeansPlusPlus),
+				WithSeed(42),
+				WithRuns(1))
+		}
+		result, err := cluster(data)
 		require.NoError(t, err)
 
 		return result
@@ -255,7 +255,7 @@ func TestNewCenterBuffer_LimitsEveryRowCapacity(t *testing.T) {
 func TestLloydKMeans_SingleRun(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(2, WithRandomSeed(42))
+	kmeans := testConfig(t, 2, WithSeed(42))
 
 	data := [][]float64{
 		{1.0, 2.0},

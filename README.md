@@ -42,11 +42,8 @@ func main() {
         {9.0, 11.0},
     }
     
-    // Create K-means instance with 2 clusters
-    km := kmeans.New(2)
-    
-    // Perform clustering
-    result, err := km.Cluster(data)
+    // Cluster the entire dataset into two groups.
+    result, err := kmeans.Cluster(data, 2)
     if err != nil {
         log.Fatal(err)
     }
@@ -59,74 +56,84 @@ func main() {
 ```
 
 `Cluster` requires a dataset with at least one sample and at least one feature per sample.
-All samples must have the same number of features.
+All samples must have the same number of features, every coordinate must be finite,
+and `k` must be between one and the number of samples, inclusive. The API processes
+the whole in-memory dataset; fitting a reusable model, prediction, and persistence
+are outside its scope.
 
 ## Advanced Usage
 
 ### Custom Configuration
 
 ```go
-// Create K-means with custom options
-km := kmeans.NewWithOptions(3,
+result, err := kmeans.Cluster(data, 3,
     kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
-    kmeans.WithMaxIter(100),
-    kmeans.WithTol(1e-6),
-    kmeans.WithRandomSeed(42),
+    kmeans.WithMaxIterations(100),
+    kmeans.WithTolerance(1e-6),
+    kmeans.WithSeed(42),
 )
 
-result, err := km.Cluster(data)
 if err != nil {
     log.Fatal(err)
 }
 fmt.Printf("Cluster labels: %v\n", result.Labels)
 ```
 
-### Using Different Initialization Methods
-
 ## API Reference
 
 ### Types
 
-#### `Kmeans`
-Main clustering struct with configurable parameters.
+#### `Cluster`
 
 ```go
-type Kmeans struct {
-    NClusters            int           // Number of clusters
-    NInit                int           // Number of initializations
-    MaxIter              int           // Maximum iterations
-    Tol                  float64       // Convergence tolerance
-    Init                 InitMethod    // Initialization method
-    RandomSeed           int64         // Random seed used by each call
-    NCentroidsInitTrials int           // K-means++ trials
-}
+func Cluster(data [][]float64, k int, opts ...Option) (*Result, error)
 ```
 
+This stateless function clusters every supplied sample. Configuration and random state
+belong to the call; there is no mutable algorithm object or public configuration API.
+The library does not accept a context or support interruption of a running call.
+
 #### `Result`
-Clustering result containing labels, centroids, and inertia.
+Clustering result for the selected initialization run. Sample `i` is assigned to
+`Centroids[Labels[i]]`; labels index centroid rows. `Converged` and `Iterations`
+describe only that run, rather than totals across runs. Iterations count Lloyd steps,
+including the step establishing convergence, but exclude initialization and final label
+reassignment. Convergence on the final allowed iteration remains convergence. Tolerance
+convergence does not guarantee centroids are exact means of the final label groups.
 
 ```go
 type Result struct {
-    Labels    []int        // Cluster labels for each point
-    Centroids [][]float64  // Cluster centroids
-    Inertia   float64      // Sum of squared distances
+    Labels     []int
+    Centroids  [][]float64
+    Inertia    float64
+    Converged  bool
+    Iterations int
 }
 ```
 
 ### Configuration Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `WithInitMethod(method)` | Set initialization method | `InitKMeansPlusPlus` |
-| `WithMaxIter(iterations)` | Set maximum iterations | `300` |
-| `WithTol(tolerance)` | Set relative convergence tolerance | `1e-4` |
-| `WithRandomSeed(seed)` | Set random seed | Random |
-| `WithNInit(nInit)` | Set number of initializations | `10` |
-| `WithNCentroidsInitTrials(trials)` | Set number of k-means++ initialization trials | `2 + log(nClusters)` |
+| Option | Valid values | Default |
+|--------|--------------|---------|
+| `WithInitMethod(method)` | `InitKMeansPlusPlus` or `InitRandom` | `InitKMeansPlusPlus` |
+| `WithMaxIterations(iterations)` | Positive integer | `DefaultMaxIterations = 300` |
+| `WithTolerance(tolerance)` | Positive, finite float | `DefaultTolerance = 1e-4` |
+| `WithSeed(seed)` | Any `int64`, including zero | Selected internally for each call |
+| `WithRuns(runs)` | Positive integer | `DefaultRuns = 10` |
+| `WithNCentroidsInitTrials(trials)` | Positive integer, even with `InitRandom` | `2 + floor(ln(k))`, resolved per call |
 
-Configuration options always retain the value supplied by the caller. Call `Validate()` to check
-configuration eagerly, or handle the validation error returned by `Cluster()`. Counts must be
-positive, and the convergence tolerance must be positive and finite.
+Only library-provided options are accepted. Nil entries and external types embedding
+`Option`, including typed-nil pointers and wrappers around valid options, are rejected
+with `ErrInvalidOption`. Built-in option values capture their settings and may be reused
+across calls. Options apply in order, and the last supplied value for a setting wins.
+Validation checks final settings: an invalid value followed by a valid replacement is
+accepted; a final invalid value is an error and never silently becomes a default.
+Unsupported or nil entries remain errors regardless of later entries.
+
+Increasing runs can improve the selected result at the cost of repeating clustering.
+Increasing k-means++ candidate trials can improve initialization at additional cost per
+centroid; one trial performs the standard weighted choice. Increasing the iteration limit
+allows more refinement, while tolerance controls the stopping threshold.
 
 ### Algorithm
 
@@ -134,9 +141,9 @@ positive, and the convergence tolerance must be positive and finite.
 - **Description**: Standard K-means algorithm
 - **Empty clusters**: Relocated to distinct samples with the largest current assignment error; ties use sample order
 - **Numerical safety**: Avoidable overflow in means, variance, distances, initialization weights, convergence, and inertia is handled with stable or scaled arithmetic. Successful results contain only finite centroids and inertia. If a required result exceeds the finite representable range or a calculation cannot be completed safely, `Cluster` returns a nil result with `ErrNumericalOverflow`. A positive inertia too small to represent may round to zero in `Result.Inertia` without an error; public zero does not prove exact coincidence of samples and centroids. Scale invariance is not guaranteed for arbitrary inputs or bit-for-bit: scaling can lose differences in input coordinates that the algorithm cannot recover.
-- **Stopping behavior**: For each `Cluster` call, the effective tolerance is `Tol * mean(var(data, axis=0))`, using population variance. Each initialization stops when assignments are unchanged between consecutive iterations or when the squared Frobenius norm `sum((newCenters - oldCenters)^2)` is at most the effective tolerance. A zero-variance dataset therefore requires zero center movement unless assignments are unchanged. Runs are ranked by internally computed inertia before conversion to public `float64`, so distinct positive inertias that both round to zero still retain their internal ordering. Equal internal inertias retain the first run, with no approximate-equality tolerance or preference for convergence. The selected run supplies its labels, centroids, public inertia, and convergence status together. If that run reaches `MaxIter` without convergence, `Cluster` returns its final result together with `ErrConvergenceFailed`.
+- **Stopping behavior**: For each `Cluster` call, the effective tolerance is `tolerance * mean(var(data, axis=0))`, using population variance. Each initialization stops when assignments are unchanged between consecutive iterations or when the squared Frobenius norm `sum((newCenters - oldCenters)^2)` is at most the effective tolerance. A zero-variance dataset therefore requires zero center movement unless assignments are unchanged. Runs are ranked by internally computed inertia before conversion to public `float64`, so distinct positive inertias that both round to zero still retain their internal ordering. Equal internal inertias retain the first run, with no approximate-equality tolerance or preference for convergence. The selected run supplies its labels, centroids, public inertia, and convergence status together. If that run reaches its iteration limit without convergence, `Cluster` returns its final result with `Converged == false` and a nil error.
 - **Best for**: General purpose clustering
-- **Time Complexity**: O(n*k*i*d) where n=points, k=clusters, i=iterations, d=dimensions
+- **Time Complexity**: O(r*n*k*i*d) for Lloyd iterations, where r=runs, n=samples, k=clusters, i=iterations, d=features; initialization adds its own work
 
 ### Initialization Methods
 
@@ -159,8 +166,7 @@ data := [][]float64{
     {1, 2}, {1.5, 1.8}, {5, 8}, {8, 8}, {1, 0.6}, {9, 11},
 }
 
-km := kmeans.New(2)
-result, err := km.Cluster(data)
+result, err := kmeans.Cluster(data, 2)
 if err != nil {
     log.Fatal(err)
 }
@@ -175,10 +181,9 @@ data := [][]float64{
     {1, 2, 3}, {1.5, 1.8, 2.5}, {5, 8, 9}, {8, 8, 7},
 }
 
-km := kmeans.NewWithOptions(2,
-    kmeans.WithMaxIter(200),
+result, err := kmeans.Cluster(data, 2,
+    kmeans.WithMaxIterations(200),
 )
-result, err := km.Cluster(data)
 if err != nil {
     log.Fatal(err)
 }
@@ -188,92 +193,109 @@ fmt.Printf("Cluster labels: %v\n", result.Labels)
 ### Reproducible Results
 
 ```go
-km := kmeans.NewWithOptions(3,
-    kmeans.WithRandomSeed(42),
-    kmeans.WithNInit(10), // Multiple initialization runs are reproducible too
+result, err := kmeans.Cluster(data, 3,
+    kmeans.WithSeed(42),
+    kmeans.WithRuns(10), // Multiple initialization runs are reproducible too
 )
-result, err := km.Cluster(data)
 if err != nil {
     log.Fatal(err)
 }
 fmt.Printf("Cluster labels: %v\n", result.Labels)
 ```
 
-Within the same library version and execution environment, identical ordered data, random
-seed, and configuration produce the same result on every call, including concurrent calls
-on the same `Kmeans` instance. This also applies when `NInit > 1`.
+Within the same library version and execution environment, identical ordered data,
+explicit seed, and options produce the same complete result on every call, including
+concurrent calls and multiple runs. `WithSeed(0)` is deterministic. Without `WithSeed`,
+the seed is chosen internally on each call and is not exposed; different seeds need not
+produce different clustering results. Cross-version or cross-platform reproducibility
+is not guaranteed.
 
-### Concurrency
+### Concurrency and Ownership
 
-`Cluster` can be called concurrently on the same `Kmeans` instance. Each call creates an
-independent random state from `RandomSeed`, so clustering work is not serialized and seeded
-results do not depend on goroutine scheduling.
-
-Treat the instance configuration and input data as read-only while `Cluster` is running.
-Concurrent mutation of exported configuration fields or input slices is not supported.
+`Cluster` calls are independent, and the same built-in options can be reused concurrently.
+Each call has independent random state, so seeded results do not depend on scheduling.
+Treat input slices as read-only during a call. The library does not modify input and
+returns independent labels and centroid storage, including separate centroid rows.
+Mutating one result does not affect input or another result.
 
 ## Performance Tips
 
 1. **Use K-means++ initialization** for better clustering quality
 2. **Adjust tolerance** based on your precision requirements
-3. **Use multiple initializations** (`NInit > 1`) for better results
+3. **Use multiple initializations** (`WithRuns` above one) for better results
 4. **Set random seed** for reproducible results
 
 ## Error Handling
 
-The library provides comprehensive error handling:
+Invalid input, invalid options, and numerical overflow always return a nil result and
+an error. Reaching an iteration limit is a successful, usable result with
+`Converged == false`; inspect metadata after checking the error:
 
 ```go
-package main
-
-import (
-    "errors"
-    "fmt"
-    "log"
-
-    "github.com/atankeev/kmeans"
-)
-
-func main() {
-    data := [][]float64{
-        {1, 2}, {1.5, 1.8}, {5, 8}, {8, 8}, {1, 0.6}, {9, 11},
+result, err := kmeans.Cluster(data, 2, kmeans.WithSeed(42))
+if err != nil {
+    if errors.Is(err, kmeans.ErrInvalidData) {
+        log.Print("samples must have consistent dimensions")
     }
-    km := kmeans.New(2)
-
-    result, err := km.Cluster(data)
-    if err != nil && !errors.Is(err, kmeans.ErrConvergenceFailed) {
-        switch {
-        case errors.Is(err, kmeans.ErrEmptyData):
-            log.Print("empty dataset provided")
-        case errors.Is(err, kmeans.ErrNoFeatures):
-            log.Print("dataset samples must contain at least one feature")
-        case errors.Is(err, kmeans.ErrInvalidK):
-            log.Print("invalid number of clusters")
-        case errors.Is(err, kmeans.ErrInvalidTol):
-            log.Print("tolerance must be positive and finite")
-        case errors.Is(err, kmeans.ErrNonFiniteData):
-            log.Print("dataset contains a NaN or infinite coordinate")
-        case errors.Is(err, kmeans.ErrNumericalOverflow):
-            // Numerical overflow always returns a nil result.
-            log.Print("a required clustering result cannot be represented safely")
-        default:
-            log.Printf("clustering failed: %v", err)
-        }
-        return
-    }
-    if errors.Is(err, kmeans.ErrConvergenceFailed) {
-        // The final labels, centroids, and inertia are still usable without convergence.
-        log.Printf("clustering reached MaxIter; using result with inertia %.2f", result.Inertia)
-    }
-
-    fmt.Printf("Cluster labels: %v\n", result.Labels)
-    fmt.Printf("Centroids: %v\n", result.Centroids)
-    fmt.Printf("Inertia: %.2f\n", result.Inertia)
+    log.Fatal(err)
 }
+if !result.Converged {
+    log.Printf("selected run reached its limit after %d iterations", result.Iterations)
+}
+fmt.Printf("Cluster labels: %v\n", result.Labels)
 ```
 
-With multiple initializations, convergence status describes only the selected lowest-inertia run. A lower-inertia non-converged run takes precedence over a converged run with higher inertia. Numerical overflow in any run aborts the call with a nil result, even if an earlier run was usable.
-Other validation and configuration errors return a nil result.
+Use `errors.Is` to identify the following sentinels. Wrapped diagnostics, including
+sample and dimension details, are useful but their exact wording is not a stable contract.
+
+| Sentinel | Cause |
+|----------|-------|
+| `ErrInvalidOption` | Nil, wrapped, or unsupported option |
+| `ErrInvalidRuns` | Non-positive run count |
+| `ErrInvalidMaxIterations` | Non-positive iteration limit |
+| `ErrInvalidTolerance` | Non-positive, NaN, or infinite tolerance |
+| `ErrInvalidNCentroidsInitTrials` | Non-positive candidate-trial count |
+| `ErrInvalidInitMethod` | Unsupported initialization method |
+| `ErrInvalidK` | Cluster count outside `1 <= k <= len(data)` |
+| `ErrEmptyData` | No samples |
+| `ErrNoFeatures` | Samples with no features |
+| `ErrInvalidData` | Inconsistent sample dimensions |
+| `ErrNonFiniteData` | NaN or infinite coordinate |
+| `ErrNumericalOverflow` | Required arithmetic cannot be represented or processed safely |
+
+Numerical overflow in any initialization run aborts the call, even after an earlier
+usable result. Lower internal inertia always wins, including a non-converged run over
+a higher-inertia converged run.
+
+## Migration from the Object API
+
+This release intentionally replaces the API in place without changing the module path
+or providing legacy aliases. The maintainer approved the compatibility deviation before
+adoption because the library has no consumers.
+
+Replace `New(k).Cluster(data)` or `NewWithOptions(k, opts...).Cluster(data)` with
+`Cluster(data, k, opts...)`. `Kmeans` and public `Validate` are removed; provide built-in
+options rather than a struct literal or mutable fields, and handle validation errors
+from `Cluster`. Constructor provenance and `ErrConfigNotInitialized` are removed.
+
+| Removed name | Replacement |
+|--------------|-------------|
+| `WithRandomSeed` | `WithSeed` |
+| `WithNInit` | `WithRuns` |
+| `WithMaxIter` | `WithMaxIterations` |
+| `WithTol` | `WithTolerance` |
+| `DefaultNInit` | `DefaultRuns` |
+| `DefaultMaxIter` | `DefaultMaxIterations` |
+| `DefaultTol` | `DefaultTolerance` |
+| `ErrInvalidNInit` | `ErrInvalidRuns` |
+| `ErrInvalidMaxIter` | `ErrInvalidMaxIterations` |
+| `ErrInvalidTol` | `ErrInvalidTolerance` |
+
+`WithInitMethod`, `WithNCentroidsInitTrials`, and initialization constants retain their
+names. Caller-defined option functions and option wrappers are no longer supported.
+Replace handling of removed `ErrConvergenceFailed` with `Result.Converged` and
+`Result.Iterations`; usable non-convergence now has a nil error. Ragged data now matches
+`ErrInvalidData` and still reports the offending sample and expected dimensions.
 
 ## Testing
 

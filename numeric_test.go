@@ -483,10 +483,10 @@ func TestCalculateScaledInertiaByLabels(t *testing.T) {
 func TestCluster_Lloyd_LargeNumbers(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 2, WithInitMethod(InitKMeansPlusPlus),
+			WithSeed(42))
+	}
 
 	data := [][]float64{
 		{1e9, 1e9},
@@ -497,7 +497,7 @@ func TestCluster_Lloyd_LargeNumbers(t *testing.T) {
 		{1e10 + 2, 1e10 + 2},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
@@ -507,13 +507,13 @@ func TestCluster_Lloyd_LargeNumbers(t *testing.T) {
 func TestCluster_NegativeCoordinates(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(1,
-		WithRandomSeed(42),
-		WithNInit(1),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 1, WithSeed(42),
+			WithRuns(1))
+	}
 	data := [][]float64{{-4, -2}, {-2, -4}}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Equal(t, [][]float64{{-3, -3}}, result.Centroids)
@@ -524,12 +524,12 @@ func TestCluster_NegativeCoordinates(t *testing.T) {
 func TestCluster_IdenticalLargeCoordinatesRemainFinite(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(1,
-		WithRandomSeed(42),
-		WithNInit(1),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 1, WithSeed(42),
+			WithRuns(1))
+	}
 
-	result, err := kmeans.Cluster([][]float64{{1e308}, {1e308}})
+	result, err := cluster([][]float64{{1e308}, {1e308}})
 
 	require.NoError(t, err)
 	require.Equal(t, [][]float64{{1e308}}, result.Centroids)
@@ -540,13 +540,13 @@ func TestCluster_IdenticalLargeCoordinatesRemainFinite(t *testing.T) {
 func TestCluster_IdenticalMaxFloatCoordinatesRemainFinite(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(1,
-		WithRandomSeed(42),
-		WithNInit(1),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 1, WithSeed(42),
+			WithRuns(1))
+	}
 	data := [][]float64{{math.MaxFloat64}, {math.MaxFloat64}, {math.MaxFloat64}}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Equal(t, [][]float64{{math.MaxFloat64}}, result.Centroids)
@@ -556,12 +556,12 @@ func TestCluster_IdenticalMaxFloatCoordinatesRemainFinite(t *testing.T) {
 func TestCluster_UnrepresentableInertiaReturnsNumericalOverflow(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(1,
-		WithRandomSeed(42),
-		WithNInit(1),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 1, WithSeed(42),
+			WithRuns(1))
+	}
 
-	result, err := kmeans.Cluster([][]float64{{-1e308}, {1e308}})
+	result, err := cluster([][]float64{{-1e308}, {1e308}})
 
 	require.Nil(t, result)
 	require.ErrorIs(t, err, ErrNumericalOverflow)
@@ -570,13 +570,13 @@ func TestCluster_UnrepresentableInertiaReturnsNumericalOverflow(t *testing.T) {
 func TestCluster_UnrepresentableIntermediateDistancesRemainComparable(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(2,
-		WithRandomSeed(3),
-		WithNInit(1),
-		WithMaxIter(1),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 2, WithSeed(3),
+			WithRuns(1),
+			WithMaxIterations(1))
+	}
 
-	result, err := kmeans.Cluster([][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}})
+	result, err := cluster([][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}})
 
 	require.NoError(t, err)
 	require.ElementsMatch(t, [][]float64{{-1e308}, {1e308}}, result.Centroids)
@@ -586,14 +586,14 @@ func TestCluster_UnrepresentableIntermediateDistancesRemainComparable(t *testing
 func TestCluster_NonFiniteIntermediatesDoNotEstablishConvergence(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitRandom),
-		WithRandomSeed(3),
-		WithNInit(1),
-		WithMaxIter(3),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 2, WithInitMethod(InitRandom),
+			WithSeed(3),
+			WithRuns(1),
+			WithMaxIterations(3))
+	}
 
-	result, err := kmeans.Cluster([][]float64{{1e308}, {1e308}, {1e307}, {1e307}})
+	result, err := cluster([][]float64{{1e308}, {1e308}, {1e307}, {1e307}})
 
 	require.NoError(t, err)
 	require.ElementsMatch(t, [][]float64{{1e307}, {1e308}}, result.Centroids)
@@ -604,25 +604,23 @@ func TestCluster_NumericalOverflowAbortsMultipleInitializationRuns(t *testing.T)
 	t.Parallel()
 
 	data := [][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}}
-	first, err := NewWithOptions(2,
-		WithInitMethod(InitRandom),
-		WithRandomSeed(0),
-		WithNInit(1),
-		WithMaxIter(1),
-	).Cluster(data)
+	first, err := Cluster(data, 2, WithInitMethod(InitRandom),
+		WithSeed(0),
+		WithRuns(1),
+		WithMaxIterations(1))
 	require.NoError(t, err)
 	require.NotNil(t, first)
 	require.Zero(t, first.Inertia)
 	require.ElementsMatch(t, [][]float64{{-1e308}, {1e308}}, first.Centroids)
 
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitRandom),
-		WithRandomSeed(0),
-		WithNInit(2),
-		WithMaxIter(1),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 2, WithInitMethod(InitRandom),
+			WithSeed(0),
+			WithRuns(2),
+			WithMaxIterations(1))
+	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.Nil(t, result)
 	require.ErrorIs(t, err, ErrNumericalOverflow)
@@ -635,14 +633,14 @@ func TestCluster_LargeCommonOffsetHasRepresentableResult(t *testing.T) {
 		offset = 1e150
 		delta  = 1e140
 	)
-	kmeans := NewWithOptions(1,
-		WithRandomSeed(42),
-		WithNInit(1),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 1, WithSeed(42),
+			WithRuns(1))
+	}
 	data := [][]float64{{offset - delta}, {offset + delta}}
 	wantCentroid := data[0][0]/2 + data[1][0]/2
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Equal(t, wantCentroid, result.Centroids[0][0])
@@ -653,10 +651,10 @@ func TestCluster_LargeCommonOffsetHasRepresentableResult(t *testing.T) {
 
 func TestCluster_Lloyd_SmallNumbers(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
+	cluster := func(data [][]float64) (*Result, error) {
+		return Cluster(data, 2, WithInitMethod(InitKMeansPlusPlus),
+			WithSeed(42))
+	}
 
 	data := [][]float64{
 		{1e-9, 1e-9},
@@ -667,7 +665,7 @@ func TestCluster_Lloyd_SmallNumbers(t *testing.T) {
 		{3e-8, 3e-8},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)

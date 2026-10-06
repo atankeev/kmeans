@@ -1,21 +1,22 @@
-package kmeans
+package kmeans_test
 
 import (
 	"math"
 	"slices"
 	"testing"
 
+	"github.com/atankeev/kmeans"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCluster_Lloyd_Basic(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-		WithMaxIter(100),
-		WithTol(1e-4),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			kmeans.WithSeed(42),
+			kmeans.WithMaxIterations(100),
+			kmeans.WithTolerance(1e-4))
+	}
 
 	data := [][]float64{
 		{1.0, 2.0},
@@ -24,14 +25,14 @@ func TestCluster_Lloyd_Basic(t *testing.T) {
 		{8.0, 8.0},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	requireTwoPairPartition(t, result)
 	require.Positive(t, result.Inertia)
 }
 
-func requireTwoPairPartition(t *testing.T, result *Result) {
+func requireTwoPairPartition(t *testing.T, result *kmeans.Result) {
 	t.Helper()
 	require.NotNil(t, result)
 	require.Len(t, result.Centroids, 2)
@@ -48,18 +49,19 @@ func requireTwoPairPartition(t *testing.T, result *Result) {
 func TestCluster_ResultDoesNotAliasSourceData(t *testing.T) {
 	t.Parallel()
 	data := [][]float64{{0, 0}, {2, 2}, {10, 10}, {12, 12}}
-	result, err := NewWithOptions(2, WithRandomSeed(42)).Cluster(data)
+	originalData := make([][]float64, len(data))
+	for i, point := range data {
+		originalData[i] = slices.Clone(point)
+	}
+	result, err := kmeans.Cluster(data, 2, kmeans.WithSeed(42))
 	require.NoError(t, err)
+	require.Equal(t, originalData, data)
 	requireTwoPairPartition(t, result)
 	for i, centroid := range result.Centroids {
 		require.Len(t, centroid, 2, "centroid %d", i)
 	}
 	originalCenters := slices.Clone(result.Centroids[0])
 	otherCenter := slices.Clone(result.Centroids[1])
-	originalData := make([][]float64, len(data))
-	for i, point := range data {
-		originalData[i] = slices.Clone(point)
-	}
 
 	result.Centroids[0][0] = 100
 	require.Equal(t, originalData, data)
@@ -75,13 +77,13 @@ func TestCluster_ResultDoesNotAliasSourceData(t *testing.T) {
 func TestCluster_CentroidRowsHaveIsolatedCapacity(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(2,
-		WithRandomSeed(42),
-		WithNInit(1),
-		WithTol(1),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 2, kmeans.WithSeed(42),
+			kmeans.WithRuns(1),
+			kmeans.WithTolerance(1))
+	}
 
-	result, err := kmeans.Cluster([][]float64{{0}, {1}, {9}, {10}})
+	result, err := cluster([][]float64{{0}, {1}, {9}, {10}})
 	require.NoError(t, err)
 	require.Equal(t, [][]float64{{0.5}, {9.5}}, result.Centroids)
 
@@ -100,10 +102,10 @@ func TestCluster_CentroidRowsHaveIsolatedCapacity(t *testing.T) {
 
 func TestCluster_Lloyd_KMeansPlusPlusInit(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(123),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			kmeans.WithSeed(123))
+	}
 
 	data := [][]float64{
 		{0.0, 0.0},
@@ -112,7 +114,7 @@ func TestCluster_Lloyd_KMeansPlusPlusInit(t *testing.T) {
 		{10.0, 11.0},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
@@ -133,10 +135,10 @@ func TestCluster_Lloyd_KMeansPlusPlusInit(t *testing.T) {
 
 func TestCluster_Lloyd_RandomInit(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitRandom),
-		WithRandomSeed(456),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitRandom),
+			kmeans.WithSeed(456))
+	}
 
 	data := [][]float64{
 		{1.0, 1.0},
@@ -145,7 +147,7 @@ func TestCluster_Lloyd_RandomInit(t *testing.T) {
 		{10.0, 10.0},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
@@ -155,12 +157,12 @@ func TestCluster_Lloyd_RandomInit(t *testing.T) {
 
 func TestCluster_Lloyd_Convergence(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-		WithMaxIter(300),
-		WithTol(1e-6),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			kmeans.WithSeed(42),
+			kmeans.WithMaxIterations(300),
+			kmeans.WithTolerance(1e-6))
+	}
 
 	data := [][]float64{
 		{1.0, 2.0},
@@ -171,7 +173,7 @@ func TestCluster_Lloyd_Convergence(t *testing.T) {
 		{10.2, 10.2},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Positive(t, result.Inertia)
@@ -195,25 +197,29 @@ func TestCluster_Lloyd_IteratesUntilConvergence(t *testing.T) {
 		}
 	}
 
-	run := func(maxIter int) (*Result, error) {
-		kmeans := NewWithOptions(5,
-			WithInitMethod(InitRandom),
-			WithRandomSeed(7),
-			WithNInit(1),
-			WithMaxIter(maxIter),
-			WithTol(1e-4),
-		)
+	run := func(maxIter int) (*kmeans.Result, error) {
+		cluster := func(data [][]float64) (*kmeans.Result, error) {
+			return kmeans.Cluster(data, 5, kmeans.WithInitMethod(kmeans.InitRandom),
+				kmeans.WithSeed(7),
+				kmeans.WithRuns(1),
+				kmeans.WithMaxIterations(maxIter),
+				kmeans.WithTolerance(1e-4))
+		}
 
-		return kmeans.Cluster(data)
+		return cluster(data)
 	}
 
 	oneIter, err := run(1)
-	require.ErrorIs(t, err, ErrConvergenceFailed)
+	require.NoError(t, err)
 	require.NotNil(t, oneIter)
+	require.False(t, oneIter.Converged)
+	require.Equal(t, 1, oneIter.Iterations)
 
 	manyIter, err := run(300)
 	require.NoError(t, err)
 
+	require.True(t, manyIter.Converged)
+	require.Greater(t, manyIter.Iterations, 1)
 	require.Less(t, manyIter.Inertia, oneIter.Inertia,
 		"Lloyd should keep refining centroids across iterations until convergence")
 }
@@ -221,55 +227,59 @@ func TestCluster_Lloyd_IteratesUntilConvergence(t *testing.T) {
 func TestCluster_Lloyd_MaxIterLimit(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(1,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-		WithNInit(3),
-		WithMaxIter(1),
-		WithTol(1e-12),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 1, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			kmeans.WithSeed(42),
+			kmeans.WithRuns(3),
+			kmeans.WithMaxIterations(1),
+			kmeans.WithTolerance(1e-12))
+	}
 
 	data := [][]float64{
 		{0},
 		{10},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
-	require.ErrorIs(t, err, ErrConvergenceFailed)
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, [][]float64{{5}}, result.Centroids)
 	require.Equal(t, []int{0, 0}, result.Labels)
 	require.Equal(t, 50.0, result.Inertia)
+	require.False(t, result.Converged)
+	require.Equal(t, 1, result.Iterations)
 }
 
 func TestCluster_Lloyd_ConvergesOnLastIteration(t *testing.T) {
 	t.Parallel()
 
-	kmeans := NewWithOptions(1,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-		WithNInit(1),
-		WithMaxIter(2),
-		WithTol(1e-12),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 1, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			kmeans.WithSeed(42),
+			kmeans.WithRuns(1),
+			kmeans.WithMaxIterations(2),
+			kmeans.WithTolerance(1e-12))
+	}
 
-	result, err := kmeans.Cluster([][]float64{{0}, {10}})
+	result, err := cluster([][]float64{{0}, {10}})
 
 	require.NoError(t, err)
 	require.Equal(t, [][]float64{{5}}, result.Centroids)
 	require.Equal(t, []int{0, 0}, result.Labels)
 	require.Equal(t, 50.0, result.Inertia)
+	require.True(t, result.Converged)
+	require.Equal(t, 2, result.Iterations)
 }
 
 func TestCluster_Lloyd_MultipleNInit(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitRandom),
-		WithRandomSeed(42),
-		WithNInit(5),
-		WithMaxIter(50),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitRandom),
+			kmeans.WithSeed(42),
+			kmeans.WithRuns(5),
+			kmeans.WithMaxIterations(50))
+	}
 
 	data := [][]float64{
 		{1.0, 2.0},
@@ -278,7 +288,7 @@ func TestCluster_Lloyd_MultipleNInit(t *testing.T) {
 		{8.0, 8.0},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
@@ -299,12 +309,12 @@ func TestCluster_Lloyd_DifferentTol(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			kmeans := NewWithOptions(2,
-				WithInitMethod(InitKMeansPlusPlus),
-				WithRandomSeed(42),
-				WithTol(tt.tol),
-				WithMaxIter(100),
-			)
+			cluster := func(data [][]float64) (*kmeans.Result, error) {
+				return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+					kmeans.WithSeed(42),
+					kmeans.WithTolerance(tt.tol),
+					kmeans.WithMaxIterations(100))
+			}
 
 			data := [][]float64{
 				{1.0, 2.0},
@@ -313,7 +323,7 @@ func TestCluster_Lloyd_DifferentTol(t *testing.T) {
 				{8.0, 8.0},
 			}
 
-			result, err := kmeans.Cluster(data)
+			result, err := cluster(data)
 
 			require.NoError(t, err)
 			requireTwoPairPartition(t, result)
@@ -324,10 +334,10 @@ func TestCluster_Lloyd_DifferentTol(t *testing.T) {
 
 func TestCluster_Lloyd_SingleDimension(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			kmeans.WithSeed(42))
+	}
 
 	data := [][]float64{
 		{1.0},
@@ -338,7 +348,7 @@ func TestCluster_Lloyd_SingleDimension(t *testing.T) {
 		{12.0},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
@@ -350,10 +360,10 @@ func TestCluster_Lloyd_SingleDimension(t *testing.T) {
 
 func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(2,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			kmeans.WithSeed(42))
+	}
 
 	data := [][]float64{
 		{1.0, 1.0},
@@ -362,7 +372,7 @@ func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
 		{1.0, 1.0},
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.Len(t, result.Centroids, 2)
@@ -371,17 +381,17 @@ func TestCluster_Lloyd_AllSamePoints(t *testing.T) {
 
 func TestCluster_Lloyd_LinearData(t *testing.T) {
 	t.Parallel()
-	kmeans := NewWithOptions(3,
-		WithInitMethod(InitKMeansPlusPlus),
-		WithRandomSeed(42),
-	)
+	cluster := func(data [][]float64) (*kmeans.Result, error) {
+		return kmeans.Cluster(data, 3, kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			kmeans.WithSeed(42))
+	}
 
 	data := make([][]float64, 30)
 	for i := 0; i < 30; i++ {
 		data[i] = []float64{float64(i), float64(i)}
 	}
 
-	result, err := kmeans.Cluster(data)
+	result, err := cluster(data)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -415,4 +425,29 @@ func TestCluster_Lloyd_LinearData(t *testing.T) {
 		require.InDelta(t, mean, result.Centroids[label][1], 1e-12, "centroid %d y", label)
 	}
 	require.InDelta(t, inertia, result.Inertia, 1e-10)
+}
+
+func TestCluster_ResultsHaveIndependentStorage(t *testing.T) {
+	t.Parallel()
+	data := [][]float64{{0, 0}, {2, 2}, {10, 10}, {12, 12}}
+	originalData := [][]float64{{0, 0}, {2, 2}, {10, 10}, {12, 12}}
+	options := []kmeans.Option{kmeans.WithSeed(42)}
+	first, err := kmeans.Cluster(data, 2, options...)
+	require.NoError(t, err)
+	second, err := kmeans.Cluster(data, 2, options...)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	require.Equal(t, originalData, data)
+	want := *second
+	want.Labels = slices.Clone(second.Labels)
+	want.Centroids = make([][]float64, len(second.Centroids))
+	for i, row := range second.Centroids {
+		want.Centroids[i] = slices.Clone(row)
+	}
+	first.Labels[0] = (first.Labels[0] + 1) % len(first.Centroids)
+	first.Centroids[0][0] = 999
+	first.Centroids[0] = append(first.Centroids[0], 777)
+	first.Centroids[1] = []float64{-1, -2}
+	require.Equal(t, &want, second)
+	require.Equal(t, originalData, data)
 }
