@@ -182,7 +182,7 @@ func TestCluster_Lloyd_Convergence(t *testing.T) {
 	centroid0X := result.Centroids[0][0]
 	centroid1X := result.Centroids[1][0]
 
-	require.True(t, math.Abs(centroid0X-centroid1X) > 4, "centroids should be in different regions")
+	require.Greater(t, math.Abs(centroid0X-centroid1X), 4.0, "centroids should be in different regions")
 }
 
 func TestCluster_Lloyd_IteratesUntilConvergence(t *testing.T) {
@@ -246,7 +246,7 @@ func TestCluster_Lloyd_MaxIterLimit(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, [][]float64{{5}}, result.Centroids)
 	require.Equal(t, []int{0, 0}, result.Labels)
-	require.Equal(t, 50.0, result.Inertia)
+	require.Equal(t, 50.0, result.Inertia) //nolint:testifylint // Integer coordinates and centroids give an exactly representable inertia.
 	require.False(t, result.Converged)
 	require.Equal(t, 1, result.Iterations)
 }
@@ -267,7 +267,7 @@ func TestCluster_Lloyd_ConvergesOnLastIteration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, [][]float64{{5}}, result.Centroids)
 	require.Equal(t, []int{0, 0}, result.Labels)
-	require.Equal(t, 50.0, result.Inertia)
+	require.Equal(t, 50.0, result.Inertia) //nolint:testifylint // Integer coordinates and centroids give an exactly representable inertia.
 	require.True(t, result.Converged)
 	require.Equal(t, 2, result.Iterations)
 }

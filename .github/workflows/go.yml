@@ -18,6 +18,31 @@ concurrency:
 
 jobs:
 
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Read lint Go version
+      id: lint-go
+      run: printf 'version=%s\n' "$(make --no-print-directory print-lint-go-version)" >> "$GITHUB_OUTPUT"
+
+    - name: Set up lint Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ steps.lint-go.outputs.version }}
+        cache: true
+
+    - name: Install lint tools
+      run: make tools
+
+    - name: Lint and check formatting
+      run: make lint
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15

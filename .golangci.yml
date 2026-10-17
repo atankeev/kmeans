@@ -1,0 +1,20 @@
+version: "2"
+
+run:
+  go: "1.24.4"
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck # Handle errors returned by calls.
+    - govet # Detect suspicious Go constructs.
+    - ineffassign # Remove assignments whose values are never used.
+    - staticcheck # Check correctness and simplify idiomatic Go.
+    - unused # Remove unreachable declarations.
+    - paralleltest # Run independent tests in parallel.
+    - testifylint # Use testify assertions correctly.
+
+formatters:
+  enable:
+    - goimports

@@ -42,7 +42,7 @@ func assertPartitionInOriginalUnits(t *testing.T, result *kmeans.Result, origina
 	require.NotNil(t, result)
 	require.Len(t, result.Centroids, 2)
 	require.Len(t, result.Labels, len(original))
-	require.Greater(t, split, 0)
+	require.Positive(t, split)
 	require.Less(t, split, len(original))
 	for i, label := range result.Labels {
 		require.GreaterOrEqual(t, label, 0, "sample %d", i)
@@ -101,7 +101,7 @@ func TestCluster_EqualInertiaRetainsFirstRun(t *testing.T) {
 		result, err := kmeans.Cluster(data, 2, kmeans.WithInitMethod(kmeans.InitRandom),
 			kmeans.WithSeed(seed), kmeans.WithRuns(nInit))
 		require.NoError(t, err)
-		require.Equal(t, 1.0, result.Inertia)
+		require.Equal(t, 1.0, result.Inertia) //nolint:testifylint // Exact equal inertias are required to test the first-run tie policy.
 		return result
 	}
 	first := run(1, 1)
@@ -134,7 +134,7 @@ func TestCluster_LowerInertiaNonConvergedRunWins(t *testing.T) {
 	require.NotNil(t, best)
 	require.False(t, best.Converged)
 	require.Equal(t, 2, best.Iterations)
-	require.Equal(t, 116.75, best.Inertia)
+	require.Equal(t, 116.75, best.Inertia) //nolint:testifylint // These coordinates give an exactly representable winning inertia.
 	require.Equal(t, []int{1, 0, 0, 0, 1, 1, 1}, best.Labels)
 	require.Equal(t, [][]float64{{7}, {22.75}}, best.Centroids)
 	require.Less(t, best.Inertia, first.Inertia)

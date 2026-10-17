@@ -15,7 +15,7 @@ func TestCluster_DefaultCall(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []int{0, 0}, result.Labels)
 	require.Equal(t, [][]float64{{1}}, result.Centroids)
-	require.Equal(t, float64(2), result.Inertia)
+	require.Equal(t, float64(2), result.Inertia) //nolint:testifylint // Integer coordinates give an exactly representable inertia.
 	require.True(t, result.Converged)
 	require.Positive(t, result.Iterations)
 }
@@ -24,7 +24,7 @@ func TestCluster_DefaultsMatchExplicitSettings(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, 10, kmeans.DefaultRuns)
 	require.Equal(t, 300, kmeans.DefaultMaxIterations)
-	require.Equal(t, 1e-4, kmeans.DefaultTolerance)
+	require.Equal(t, 1e-4, kmeans.DefaultTolerance) //nolint:testifylint // The exported default must match this exact configuration value.
 	data := [][]float64{{0}, {1}, {2}, {4}, {8}, {16}}
 	for _, k := range []int{1, 2, 3, 6} {
 		t.Run(fmt.Sprintf("k=%d", k), func(t *testing.T) {

@@ -315,6 +315,59 @@ from the repository root:
 go test ./...
 ```
 
+Install the pinned lint tool explicitly, then run the same checks as CI:
+
+```bash
+make tools
+make lint
+```
+
+Lint uses **golangci-lint v2.15.0** and **Go 1.27.2**, with version pins maintained
+in the Makefile. The library's minimum supported Go version remains **1.24.4**;
+the `build` CI job builds and tests on that minimum. Lint commands select their
+Go toolchain through command-scoped `GOTOOLCHAIN`; Go may download it on first
+use. This does not change the Go version used by other projects or ordinary Go
+commands.
+
+`make tools` downloads the official release archive, verifies its SHA-256
+checksum, and installs the binary in the ignored `.bin/` directory. Supported
+platforms are Linux and macOS on amd64 and arm64; use WSL on Windows. Installation
+requires network access, Go, Make, a POSIX shell, `curl`, `tar`, `mktemp`, `awk`,
+and either `sha256sum` or `shasum`.
+`make lint` does not install or upgrade the linter. If it reports a missing or
+mismatched version, run `make tools` again.
+
+Automatic Go toolchain downloads require checksum verification. If your environment
+sets `GOSUMDB=off`, use `GOSUMDB=sum.golang.org make lint` (or `make fmt`). If a
+configured `GOPROXY` cannot serve toolchains or checksum lookups, select a proxy
+that supports them. The Make targets do not override `GOPROXY` or `GOSUMDB`.
+
+Both library code and tests are checked with an explicit set of linters:
+
+| Linter | Purpose |
+| --- | --- |
+| `errcheck` | Find unchecked errors. |
+| `govet` | Detect suspicious constructs using Go's vet analyzers. |
+| `ineffassign` | Find assignments whose values are never used. |
+| `staticcheck` | Detect bugs and incorrect use of Go APIs. |
+| `unused` | Find unused declarations. |
+| `paralleltest` | Check parallel execution of ordinary tests where safe. |
+| `testifylint` | Check correct use of testify assertions. |
+
+`make lint` also checks goimports formatting without modifying files. Apply
+formatting locally with:
+
+```bash
+make fmt
+```
+
+Preserve assertions that test exact numerical guarantees. Any necessary linter
+suppression must target the specific diagnostic and explain its reason; do not
+blanket-exclude tests. Run `go test -race ./...` for concurrency-related changes.
+The dedicated CI check is named `lint`; it runs on pull requests and pushes to
+`main` with a ten-minute timeout. Its vet and formatting checks also cover those
+requirements for the broader CI work in issue #31.
+
 This library was developed with the assistance of AI assistants.
 
 ## License
