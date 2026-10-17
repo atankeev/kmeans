@@ -168,10 +168,10 @@ func TestUpdateCentersLloydInto(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			k := &config{NClusters: tt.nClusters}
-			got := newCenterBuffer(k.NClusters, len(tt.centers[0]))
+			k := &kmeans{config: config{NClusters: tt.nClusters}}
+			got := newCenterBuffer(k.config.NClusters, len(tt.centers[0]))
 			run := func() {
-				k.updateCentersLloydInto(got, make([]int, k.NClusters), make([]scaledValue, len(tt.data)), tt.data, tt.labels, tt.centers)
+				k.updateCentersLloydInto(got, make([]int, k.config.NClusters), make([]scaledValue, len(tt.data)), tt.data, tt.labels, tt.centers)
 			}
 			if tt.wantPanic {
 				require.Panics(t, run)
@@ -255,7 +255,7 @@ func TestNewCenterBuffer_LimitsEveryRowCapacity(t *testing.T) {
 func TestLloydKMeans_SingleRun(t *testing.T) {
 	t.Parallel()
 
-	kmeans := testConfig(t, 2, WithSeed(42))
+	kmeans := testKmeans(t, 2, WithSeed(42))
 
 	data := [][]float64{
 		{1.0, 2.0},
@@ -266,7 +266,7 @@ func TestLloydKMeans_SingleRun(t *testing.T) {
 
 	result, _, converged, err := kmeans.lloydKMeans(
 		data, make([]int, len(data)), make([]int, len(data)),
-		make([]scaledValue, len(data)), kmeans.newRandomState(), calculateScaledTolerance(data, kmeans.Tol),
+		make([]scaledValue, len(data)), kmeans.newRandomState(), calculateScaledTolerance(data, kmeans.config.Tol),
 	)
 	require.True(t, converged)
 

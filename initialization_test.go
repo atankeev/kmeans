@@ -54,7 +54,7 @@ func TestKmeans_InitRandomCentroids(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			kmeans := testConfig(t, tt.nClusters, WithSeed(tt.randomSeed))
+			kmeans := testKmeans(t, tt.nClusters, WithSeed(tt.randomSeed))
 
 			centroids := kmeans.initRandomCentroids(tt.data, rand.New(rand.NewSource(tt.randomSeed)))
 
@@ -87,7 +87,7 @@ func TestKmeans_InitRandomCentroids_UsesSuppliedGenerator(t *testing.T) {
 
 	// Seed 42 selects indexes 1 and 3. The configured seed deliberately differs
 	// so ignoring the supplied generator changes this observation.
-	kmeans := testConfig(t, 2, WithSeed(999))
+	kmeans := testKmeans(t, 2, WithSeed(999))
 	centroids := kmeans.initRandomCentroids(data, rand.New(rand.NewSource(42)))
 	require.Equal(t, [][]float64{{3, 4}, {7, 8}}, centroids)
 }
@@ -95,7 +95,7 @@ func TestKmeans_InitRandomCentroids_UsesSuppliedGenerator(t *testing.T) {
 func TestKmeans_InitRandomCentroids_CopiesSelectedPoint(t *testing.T) {
 	t.Parallel()
 	data := [][]float64{{1, 2}, {3, 4}, {5, 6}, {7, 8}}
-	centroids := testConfig(t, 1).initRandomCentroids(data, rand.New(rand.NewSource(42)))
+	centroids := testKmeans(t, 1).initRandomCentroids(data, rand.New(rand.NewSource(42)))
 	require.Equal(t, [][]float64{{3, 4}}, centroids)
 
 	centroids[0][0] = 30
@@ -109,7 +109,7 @@ func TestKmeans_InitRandomCentroids_EdgeCases(t *testing.T) {
 	t.Run("single data point", func(t *testing.T) {
 		t.Parallel()
 		data := [][]float64{{1.0, 2.0, 3.0}}
-		kmeans := testConfig(t, 1, WithSeed(42))
+		kmeans := testKmeans(t, 1, WithSeed(42))
 
 		centroids := kmeans.initRandomCentroids(data, rand.New(rand.NewSource(42)))
 
@@ -319,7 +319,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{6.0, 6.0},
 		}
 
-		kmeans := testConfig(t, 3, WithSeed(42))
+		kmeans := testKmeans(t, 3, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -337,7 +337,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{7.0, 8.0, 9.0},
 		}
 
-		kmeans := testConfig(t, 1, WithSeed(42))
+		kmeans := testKmeans(t, 1, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -354,7 +354,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{3.0, 3.0},
 		}
 
-		kmeans := testConfig(t, 3, WithSeed(42))
+		kmeans := testKmeans(t, 3, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -375,8 +375,8 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{5.0, 5.0},
 		}
 
-		kmeans1 := testConfig(t, 3, WithSeed(42))
-		kmeans2 := testConfig(t, 3, WithSeed(42))
+		kmeans1 := testKmeans(t, 3, WithSeed(42))
+		kmeans2 := testKmeans(t, 3, WithSeed(42))
 
 		centroids1 := kmeans1.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans1.newRandomState())
 		centroids2 := kmeans2.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans2.newRandomState())
@@ -394,8 +394,8 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{5.0, 5.0},
 		}
 
-		kmeans1 := testConfig(t, 3, WithSeed(42))
-		kmeans2 := testConfig(t, 3, WithSeed(123456))
+		kmeans1 := testKmeans(t, 3, WithSeed(42))
+		kmeans2 := testKmeans(t, 3, WithSeed(123456))
 
 		centroids1 := kmeans1.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans1.newRandomState())
 		centroids2 := kmeans2.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans2.newRandomState())
@@ -413,7 +413,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{10.0, 10.0},
 		}
 
-		kmeans := testConfig(t, len(data), WithSeed(42))
+		kmeans := testKmeans(t, len(data), WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -431,7 +431,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{5.0, 5.0},
 		}
 
-		kmeans := testConfig(t, 2, WithSeed(42))
+		kmeans := testKmeans(t, 2, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -453,7 +453,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{8.0, 8.0},
 		}
 
-		kmeans := testConfig(t, 5, WithSeed(42))
+		kmeans := testKmeans(t, 5, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -473,7 +473,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{6.0, 7.0, 8.0, 9.0, 10.0},
 		}
 
-		kmeans := testConfig(t, 3, WithSeed(42))
+		kmeans := testKmeans(t, 3, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -496,7 +496,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{0.0, 0.0},
 		}
 
-		kmeans := testConfig(t, 3, WithSeed(42))
+		kmeans := testKmeans(t, 3, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -515,7 +515,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{9.6, 10.2},
 		}
 
-		kmeans := testConfig(t, 3, WithSeed(42))
+		kmeans := testKmeans(t, 3, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -532,7 +532,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{11.0, 11.0}, {12.0, 12.0}, {13.0, 13.0}, {14.0, 14.0}, {15.0, 15.0},
 		}
 
-		kmeans := testConfig(t, 8, WithSeed(42))
+		kmeans := testKmeans(t, 8, WithSeed(42))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 
@@ -550,7 +550,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 			{4.0, 4.0},
 			{5.0, 5.0},
 		}
-		kmeans := testConfig(t, 2, WithSeed(42), WithNCentroidsInitTrials(1))
+		kmeans := testKmeans(t, 2, WithSeed(42), WithNCentroidsInitTrials(1))
 
 		centroids := kmeans.initKMeansPlusPlusCentroidsWithDistances(data, make([]scaledValue, len(data)), kmeans.newRandomState())
 		require.Len(t, centroids, 2)
@@ -560,7 +560,7 @@ func TestKmeans_InitKMeansPlusPlusCentroidsWithDistances(t *testing.T) {
 
 func TestInitCentroidsWithDistances_Random(t *testing.T) {
 	t.Parallel()
-	kmeans := testConfig(t, 2,
+	kmeans := testKmeans(t, 2,
 		WithInitMethod(InitRandom),
 		WithSeed(42),
 	)
@@ -580,7 +580,7 @@ func TestInitCentroidsWithDistances_Random(t *testing.T) {
 
 func TestInitCentroidsWithDistances_KMeansPlusPlus(t *testing.T) {
 	t.Parallel()
-	kmeans := testConfig(t, 2,
+	kmeans := testKmeans(t, 2,
 		WithInitMethod(InitKMeansPlusPlus),
 		WithSeed(42),
 	)
@@ -603,8 +603,8 @@ func TestInitCentroidsWithDistances_KMeansPlusPlus(t *testing.T) {
 func TestInitCentroidsWithDistances_Default(t *testing.T) {
 	t.Parallel()
 
-	kmeans := testConfig(t, 2, WithSeed(42))
-	require.Equal(t, InitKMeansPlusPlus, kmeans.Init)
+	kmeans := testKmeans(t, 2, WithSeed(42))
+	require.Equal(t, InitKMeansPlusPlus, kmeans.config.Init)
 
 	data := [][]float64{
 		{1.0, 2.0},
