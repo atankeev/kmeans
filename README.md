@@ -37,7 +37,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/atankeev/kmeans"
 )
@@ -52,18 +51,39 @@ func main() {
 		{9.0, 11.0},
 	}
 
-	// Cluster the entire dataset into two groups.
-	result, err := kmeans.Cluster(data, 2)
+	result, err := kmeans.Cluster(data, 2, kmeans.WithSeed(42))
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("unexpected error")
+		return
 	}
 
-	fmt.Printf("Cluster labels: %v\n", result.Labels)
-	fmt.Printf("Centroids: %v\n", result.Centroids)
-	fmt.Printf("Inertia: %.2f\n", result.Inertia)
-	fmt.Printf("Converged: %t after %d iterations\n", result.Converged, result.Iterations)
+	// Present groups in first-appearance order, independent of cluster labels.
+	groups := make([][]int, 0, 2)
+	groupByLabel := make(map[int]int, 2)
+	for sample, label := range result.Labels {
+		group, ok := groupByLabel[label]
+		if !ok {
+			group = len(groups)
+			groupByLabel[label] = group
+			groups = append(groups, nil)
+		}
+		groups[group] = append(groups[group], sample)
+	}
+	fmt.Printf("Sample groups: %v\n", groups)
+	fmt.Printf("Converged: %t\n", result.Converged)
 }
 ```
+
+Output:
+
+```text
+Sample groups: [[0 1 4] [2 3 5]]
+Converged: true
+```
+
+The groups contain zero-based sample indices, ordered by their first appearance
+in the input, so the display does not depend on numeric cluster labels. This
+scenario and output are checked by `ExampleCluster` in [example_test.go](example_test.go).
 
 Input must contain at least one sample and at least one feature per sample. All
 samples must have the same number of features, every coordinate must be finite,
@@ -88,13 +108,17 @@ on the final allowed iteration remains convergence. Tolerance convergence does
 not guarantee centroids are exact means of the final label groups.
 
 A nil error with `Converged == false` is a usable non-converged result: the selected
-run reached its iteration limit. See [stopping](#stopping) and
+run reached its iteration limit. `ExampleCluster_nonConverged` in
+[example_test.go](example_test.go) demonstrates this with two samples, `0` and `10`,
+one cluster, three initialization runs, and a one-iteration limit: the result has
+`Converged: false`, `Iterations: 1`, and centroid `5`, with no error.
+See [stopping](#stopping) and
 [result selection](#result-selection) for the precise rules.
 
 ## Configuration
 
-To customize the Quick Start, keep its `data` declaration and imports (`fmt`,
-`log`, and `github.com/atankeev/kmeans`), then replace the call and everything
+To customize the Quick Start, keep its `data` declaration and imports, add `"log"`
+to its import block, then replace the call and everything
 after it inside `main` with this fragment:
 
 ```go
@@ -174,22 +198,28 @@ Invalid input, invalid options, and numerical overflow always return a nil resul
 and an error. Reaching an iteration limit can return a successful result with
 `Converged == false`; inspect metadata after checking the error.
 
-For this fragment, keep the Quick Start's `data` declaration and imports, add
-`"errors"` to its import block, and replace the call and everything after it
-inside `main`:
+For this fragment, keep the Quick Start's imports, add `"errors"` to its import
+block, and replace the body of `main`. Like `ExampleCluster_invalidData`, it
+deliberately passes samples with different dimensions:
 
 ```go
-result, err := kmeans.Cluster(data, 2, kmeans.WithSeed(42))
+data := [][]float64{{1, 2}, {3}}
+_, err := kmeans.Cluster(data, 1, kmeans.WithSeed(42))
+if errors.Is(err, kmeans.ErrInvalidData) {
+    fmt.Println("invalid data")
+    return
+}
 if err != nil {
-    if errors.Is(err, kmeans.ErrInvalidData) {
-        log.Print("samples must have consistent dimensions")
-    }
-    log.Fatal(err)
+    fmt.Println("unexpected error")
+    return
 }
-if !result.Converged {
-    log.Printf("selected run reached its limit after %d iterations", result.Iterations)
-}
-fmt.Printf("Cluster labels: %v\n", result.Labels)
+fmt.Println("unexpected success")
+```
+
+Output:
+
+```text
+invalid data
 ```
 
 Use `errors.Is` to identify the following sentinels. Wrapped diagnostics, including
