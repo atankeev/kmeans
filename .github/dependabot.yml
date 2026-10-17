@@ -9,6 +9,17 @@ updates:
       timezone: Europe/Istanbul
     open-pull-requests-limit: 3
   - package-ecosystem: gomod
+    directory: /tools/govulncheck
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Istanbul
+    allow:
+      - dependency-name: golang.org/x/vuln
+        dependency-type: all
+    open-pull-requests-limit: 3
+  - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly

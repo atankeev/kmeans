@@ -368,6 +368,48 @@ The dedicated CI check is named `lint`; it runs on pull requests and pushes to
 `main` with a ten-minute timeout. Its vet and formatting checks also cover those
 requirements for the broader CI work in issue #31.
 
+### Vulnerability scanning
+
+Use the latest stable Go release, Make, and network access to install the pinned
+scanner and scan the library from the repository root:
+
+```bash
+make vuln
+```
+
+`make vuln-tools` installs only the scanner. `make vuln` reinstalls it from the
+pinned module graph before running `.bin/govulncheck ./...` from the library root.
+The scanner's version, dependencies, and required Go minimum live in
+`tools/govulncheck/go.mod` and `go.sum`, separate from the library's dependencies
+and Go minimum. Installation uses the committed graph and checksums without
+updating the module files. If Go needs to download a toolchain, the checksum and
+proxy considerations described above also apply.
+
+The **Vulnerability scan** workflow runs the `govulncheck` check on pushes and
+pull requests targeting `main`, manual runs, and Mondays at 06:23 UTC (09:23 in
+Europe/Istanbul). It uses stable Go; a passing scan does not establish security
+on every older supported Go version. Installation errors, scanner errors,
+vulnerability database/network failures, and reported vulnerabilities fail the
+check, with complete diagnostics in the Actions logs.
+
+To investigate scheduled failures, open **Actions → Vulnerability scan**, select
+the failed scheduled run, and inspect the `govulncheck` job's installation and
+scan step. After investigating or fixing the cause, choose **Re-run failed jobs**.
+To scan the current default branch instead of the original run's commit, choose
+**Run workflow** on `main` (or run `gh workflow run vulnerability.yml --ref main`).
+Track any vulnerability and required Go or dependency remediation in a separate
+issue; remediation can block completion of the scanning setup.
+
+Dependabot checks the scanner module weekly on Mondays at 09:00 Europe/Istanbul
+and opens reviewable PRs for `golang.org/x/vuln`, including necessary dependency
+graph changes. These PRs run the same vulnerability check; review compatibility
+and the scan result before merging. Other transitive dependencies do not receive
+separate version-update PRs from this entry. To maintain the pin manually, update
+the nested module and its checksums, then run `make vuln`; do not add a second
+version pin to commands or change the root module for scanner maintenance.
+The scheduled run alone is not a merge gate; required-check policy is tracked in
+issue #34.
+
 This library was developed with the assistance of AI assistants.
 
 ## License
