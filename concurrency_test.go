@@ -1,10 +1,11 @@
 package kmeans_test
 
 import (
-	"github.com/atankeev/kmeans"
-	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
+
+	"github.com/atankeev/kmeans"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCluster_ConcurrentCallsAreReproducible(t *testing.T) {

@@ -229,7 +229,7 @@ func TestCluster_Lloyd_RecoversEmptyClusters(t *testing.T) {
 	for _, count := range counts {
 		require.Positive(t, count)
 	}
-	require.Equal(t, requireFiniteScaled(t, calculateScaledInertiaByLabels(data, first.Centroids, first.Labels)), first.Inertia)
+	require.Equal(t, requireFiniteScaled(t, calculateScaledInertiaByLabels(data, first.Centroids, first.Labels)), first.Inertia) //nolint:testifylint // Identical inputs and labels must produce exactly the reported inertia.
 	for _, centroid := range first.Centroids {
 		require.Equal(t, []float64{100, 200}, centroid)
 		require.NotEqual(t, []float64{0, 0}, centroid)

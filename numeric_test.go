@@ -100,8 +100,8 @@ func TestScaledSquaredDistance_EdgeCases(t *testing.T) {
 		p1 := []float64{1e10, 2e10}
 		p2 := []float64{3e10, 4e10}
 		result := requireFiniteScaled(t, scaledSquaredDistance(p1, p2))
-		expected := 8e20 // (2e10)² + (2e10)² = 4e20 + 4e20 = 8e20
-		require.Equal(t, expected, result)
+		expected := 8e20                   // (2e10)² + (2e10)² = 4e20 + 4e20 = 8e20
+		require.Equal(t, expected, result) //nolint:testifylint // This representable squared distance must retain its exact value.
 	})
 
 	t.Run("very small numbers", func(t *testing.T) {
@@ -518,7 +518,7 @@ func TestCluster_NegativeCoordinates(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, [][]float64{{-3, -3}}, result.Centroids)
 	require.Equal(t, []int{0, 0}, result.Labels)
-	require.Equal(t, 4.0, result.Inertia)
+	require.Equal(t, 4.0, result.Inertia) //nolint:testifylint // Integer coordinates and centroids give an exactly representable inertia.
 }
 
 func TestCluster_IdenticalLargeCoordinatesRemainFinite(t *testing.T) {
@@ -643,7 +643,7 @@ func TestCluster_LargeCommonOffsetHasRepresentableResult(t *testing.T) {
 	result, err := cluster(data)
 
 	require.NoError(t, err)
-	require.Equal(t, wantCentroid, result.Centroids[0][0])
+	require.Equal(t, wantCentroid, result.Centroids[0][0]) //nolint:testifylint // The large-offset mean must match the overflow-safe reference exactly.
 	require.Positive(t, result.Inertia)
 	require.False(t, math.IsInf(result.Inertia, 0))
 	require.False(t, math.IsNaN(result.Inertia))
@@ -685,12 +685,12 @@ func TestUpdateScaledMinDistances_IncrementalProperties(t *testing.T) {
 	data := [][]float64{{1, 2, 3, 4, 5}, {6, 7, 8, 9, 10}}
 	distances := make([]scaledValue, len(data))
 	updateScaledMinDistances(distances, data, []float64{0, 0, 0, 0, 0}, true)
-	require.Equal(t, 55.0, requireFiniteScaled(t, distances[0]))
-	require.Equal(t, 330.0, requireFiniteScaled(t, distances[1]))
+	require.Equal(t, 55.0, requireFiniteScaled(t, distances[0]))  //nolint:testifylint // Integer coordinates give an exactly representable squared distance.
+	require.Equal(t, 330.0, requireFiniteScaled(t, distances[1])) //nolint:testifylint // Integer coordinates give an exactly representable squared distance.
 
 	updateScaledMinDistances(distances, data, []float64{5, 5, 5, 5, 5}, false)
-	require.Equal(t, 30.0, requireFiniteScaled(t, distances[0]))
-	require.Equal(t, 55.0, requireFiniteScaled(t, distances[1]))
+	require.Equal(t, 30.0, requireFiniteScaled(t, distances[0])) //nolint:testifylint // Integer coordinates give an exactly representable squared distance.
+	require.Equal(t, 55.0, requireFiniteScaled(t, distances[1])) //nolint:testifylint // Integer coordinates give an exactly representable squared distance.
 
 	for _, point := range data {
 		updateScaledMinDistances(distances, data, point, false)
@@ -707,6 +707,6 @@ func TestCalculateScaledInertiaByLabels_Additivity(t *testing.T) {
 	first := calculateScaledInertiaByLabels(data[:1], centers, labels[:1])
 	second := calculateScaledInertiaByLabels(data[1:], centers, labels[1:])
 	combined := calculateScaledInertiaByLabels(data, centers, labels)
-	require.Equal(t, 4.0, requireFiniteScaled(t, combined))
+	require.Equal(t, 4.0, requireFiniteScaled(t, combined)) //nolint:testifylint // Integer coordinates give an exactly representable combined inertia.
 	require.Zero(t, combined.compare(first.add(second)))
 }
