@@ -13,7 +13,8 @@ follow `docs/agents/git-workflow.md`. Deliver changes to `main` through a PR.
 
 ### Issue tracker
 
-Issues are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+Track work and record task plans and agreed decisions in GitHub Issues. Before
+planning or updating a task, read `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
