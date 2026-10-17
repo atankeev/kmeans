@@ -2,6 +2,21 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+## Planning and decisions
+
+Use the task's GitHub issue as the planning record. Update an existing issue when
+one exists; create an issue for new work. Keep the current agreed plan, decisions,
+and acceptance criteria in the issue body, preserving existing requirements.
+Use comments for discussion history.
+
+After a planning discussion, update the issue, verify the saved content, and
+return its URL. Planning-only work ends there; branches and PRs are needed when
+repository files change, following `git-workflow.md`.
+
+Create repository documentation for lasting domain definitions and qualifying
+ADRs under `domain.md`, or when the user explicitly requests a repository
+document. Keep task execution plans in the issue.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
