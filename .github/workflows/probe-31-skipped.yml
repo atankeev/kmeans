@@ -1,0 +1,42 @@
+name: Temporary issue 31 skipped probe
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - run: exit 0
+
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - run: exit 0
+
+  race-coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - run: exit 0
+
+  build:
+    name: build
+    if: ${{ always() }}
+    needs: [compatibility, smoke, race-coverage]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - name: Require every test job to succeed
+      env:
+        TEST_RESULTS: ${{ toJSON(needs) }}
+      run: |
+        printf '%s\n' "$TEST_RESULTS"
+        jq -e 'all(.[]; .result == "success")' <<< "$TEST_RESULTS"
