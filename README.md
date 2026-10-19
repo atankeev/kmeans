@@ -338,12 +338,37 @@ go doc . WithTolerance
 
 ## Contributing
 
-Contributions are welcome via GitHub issues and pull requests. Run the test suite
-from the repository root:
+Contributions are welcome via GitHub issues and pull requests. Using the Go
+toolchain you want to verify, run uncached tests with shuffled execution order
+from the repository root (POSIX shell):
 
 ```bash
-go test ./...
+GOTOOLCHAIN=local go test -shuffle=on -count=1 ./...
 ```
+
+Repeat with the exact minimum version declared in `go.mod` and current stable
+Go. `GOTOOLCHAIN=local` prevents Go from silently downloading a newer toolchain
+to satisfy the module's minimum. In PowerShell, set `$env:GOTOOLCHAIN = "local"`
+before running the `go test` command.
+
+With a race-detector-supported toolchain and C compiler, reproduce CI's race and
+atomic coverage check:
+
+```bash
+GOTOOLCHAIN=local go test -race -shuffle=on -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+```
+
+The [Go CI workflow](https://github.com/atankeev/kmeans/actions/workflows/go.yml)
+runs compatibility tests on Linux x64 with minimum and stable Go, stable-Go smoke
+tests on Windows x64 and macOS ARM64, and race detection with atomic coverage on
+Linux x64. Jobs record their actual Go version, OS, and architecture. Each race
+job publishes function coverage in its run summary and retains a downloadable
+`coverage-linux-stable` profile artifact for 30 days. Missing profiles or failed
+uploads fail that job; no overall coverage threshold is enforced. The `build`
+check succeeds only when every compatibility, smoke, and race/coverage job
+succeeds. These checks preserve the platform-local numerical and
+[Reproducibility](#reproducibility) guarantees.
 
 Install the pinned lint tool explicitly, then run the same checks as CI:
 
@@ -354,7 +379,7 @@ make lint
 
 Lint uses **golangci-lint v2.15.0** and **Go 1.27.2**, with version pins maintained
 in the Makefile. The library's minimum supported Go version remains **1.24.4**;
-the `build` CI job builds and tests on that minimum. Lint commands select their
+CI selects the minimum test toolchain from `go.mod`. Lint commands select their
 Go toolchain through command-scoped `GOTOOLCHAIN`; Go may download it on first
 use. This does not change the Go version used by other projects or ordinary Go
 commands.
@@ -395,8 +420,7 @@ Preserve assertions that test exact numerical guarantees. Any necessary linter
 suppression must target the specific diagnostic and explain its reason; do not
 blanket-exclude tests. Run `go test -race ./...` for concurrency-related changes.
 The dedicated CI check is named `lint`; it runs on pull requests and pushes to
-`main` with a ten-minute timeout. Its vet and formatting checks also cover those
-requirements for the broader CI work in issue #31.
+`main` with a ten-minute timeout and supplies CI's vet and formatting checks.
 
 ### Vulnerability scanning
 
