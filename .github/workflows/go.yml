@@ -1,6 +1,3 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
 name: Go
 
 on:
@@ -43,9 +40,22 @@ jobs:
     - name: Lint and check formatting
       run: make lint
 
-  build:
-    runs-on: ubuntu-latest
+  compatibility:
+    name: Linux x64 / Go ${{ matrix.toolchain }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - toolchain: minimum
+            go-version-file: go.mod
+            go-version: ''
+          - toolchain: stable
+            go-version-file: ''
+            go-version: stable
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -54,11 +64,103 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
-        go-version: '1.24.4'
+        go-version-file: ${{ matrix.go-version-file }}
+        go-version: ${{ matrix.go-version }}
         cache: true
 
-    - name: Build
-      run: go build -v ./...
+    - name: Record toolchain and platform
+      run: |
+        go version
+        go env GOOS GOARCH GOTOOLCHAIN
 
     - name: Test
-      run: go test -v ./...
+      run: go test -shuffle=on -count=1 ./...
+
+  smoke:
+    name: ${{ matrix.platform }} / Go stable smoke
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows x64
+            runner: windows-2025
+          - platform: macOS ARM64
+            runner: macos-15
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up stable Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: stable
+        cache: true
+
+    - name: Record toolchain and platform
+      run: |
+        go version
+        go env GOOS GOARCH GOTOOLCHAIN
+
+    - name: Test
+      run: go test -shuffle=on -count=1 ./...
+
+  race-coverage:
+    name: Linux x64 / Go stable race and coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up stable Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: stable
+        cache: true
+
+    - name: Record toolchain and platform
+      run: |
+        go version
+        go env GOOS GOARCH GOTOOLCHAIN
+
+    - name: Test with race detection and atomic coverage
+      run: go test -race -shuffle=on -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+
+    - name: Publish function coverage summary
+      run: |
+        go tool cover -func=coverage.out > coverage.txt
+        {
+          printf '## Function coverage\n\n```text\n'
+          cat coverage.txt
+          printf '```\n'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload coverage profile
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: coverage-linux-stable
+        path: coverage.out
+        retention-days: 30
+        if-no-files-found: error
+
+  build:
+    name: build
+    if: ${{ always() }}
+    needs: [compatibility, smoke, race-coverage]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - name: Require every test job to succeed
+      env:
+        TEST_RESULTS: ${{ toJSON(needs) }}
+      run: |
+        printf '%s\n' "$TEST_RESULTS"
+        jq -e 'all(.[]; .result == "success")' <<< "$TEST_RESULTS"
