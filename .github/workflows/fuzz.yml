@@ -1,0 +1,94 @@
+name: Numerical fuzzing
+
+on:
+  schedule:
+    - cron: '37 5 * * *'
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'Minutes per target (integer 1–10; job timeout remains 15 minutes)'
+        required: true
+        default: '2'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Linux x64 / Go stable numerical fuzzing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up stable Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: stable
+        cache: true
+
+    - name: Validate fuzz budget and record environment
+      id: budget
+      env:
+        MINUTES: ${{ inputs.minutes || '2' }}
+      shell: bash
+      run: |
+        mkdir -p fuzz-evidence
+        if [[ ! "$MINUTES" =~ ^([1-9]|10)$ ]]; then
+          printf 'minutes must be an integer from 1 to 10\n' | tee fuzz-evidence/budget.log
+          exit 1
+        fi
+        printf 'duration=%sm\n' "$MINUTES" >> "$GITHUB_OUTPUT"
+        {
+          go version
+          go env GOOS GOARCH GOTOOLCHAIN
+          printf 'Budget: %s minutes per target; workers: 2; job timeout: 15 minutes\n' "$MINUTES"
+        } | tee fuzz-evidence/environment.log
+
+    - name: Fuzz finite input
+      shell: bash
+      env:
+        DURATION: ${{ steps.budget.outputs.duration }}
+      run: |
+        set -o pipefail
+        go test -run='^$' -fuzz='^FuzzClusterFinite$' -fuzztime="$DURATION" -parallel=2 . 2>&1 | tee fuzz-evidence/finite.log
+
+    - name: Fuzz invalid input
+      if: ${{ !cancelled() && steps.budget.outcome == 'success' }}
+      shell: bash
+      env:
+        DURATION: ${{ steps.budget.outputs.duration }}
+      run: |
+        set -o pipefail
+        go test -run='^$' -fuzz='^FuzzClusterInvalid$' -fuzztime="$DURATION" -parallel=2 . 2>&1 | tee fuzz-evidence/invalid.log
+
+    - name: Collect reproducing inputs
+      if: ${{ always() }}
+      shell: bash
+      run: |
+        mkdir -p fuzz-evidence
+        if [[ -d testdata/fuzz ]]; then
+          cp -R testdata/fuzz fuzz-evidence/testdata-fuzz
+        fi
+        if cache_dir="$(go env GOCACHE)" && [[ -d "$cache_dir/fuzz" ]]; then
+          cp -R "$cache_dir/fuzz" fuzz-evidence/go-fuzz-cache
+        fi
+        printf 'Run: %s\nCommit: %s\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > fuzz-evidence/run.txt
+
+    - name: Upload fuzz evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: numerical-fuzz-evidence
+        path: fuzz-evidence/
+        retention-days: 30
+        if-no-files-found: error
