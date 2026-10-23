@@ -285,7 +285,12 @@ func TestCalculateScaledTolerance(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.InDelta(t, tt.want, requireFiniteScaled(t, calculateScaledTolerance(tt.data, tt.relativeTolerance)), 1e-12)
+			require.InDelta(
+				t,
+				tt.want,
+				requireFiniteScaled(t, calculateScaledTolerance(tt.data, tt.relativeTolerance)),
+				1e-12,
+			)
 		})
 	}
 }
@@ -380,7 +385,11 @@ func TestCheckScaledConvergence(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, checkScaledConvergence(tt.oldCenters, tt.newCenters, scaledFromFloat(tt.tolerance)))
+			require.Equal(
+				t,
+				tt.want,
+				checkScaledConvergence(tt.oldCenters, tt.newCenters, scaledFromFloat(tt.tolerance)),
+			)
 		})
 	}
 }
@@ -674,7 +683,7 @@ func TestCluster_Lloyd_SmallNumbers(t *testing.T) {
 
 func requireFiniteScaled(t *testing.T, value scaledValue) float64 {
 	t.Helper()
-	result, representable := value.float64()
+	result, representable := value.toFloat64()
 	require.True(t, representable, "expected a finite float64 value")
 	return result
 }

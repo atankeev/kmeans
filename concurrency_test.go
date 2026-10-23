@@ -10,12 +10,25 @@ import (
 
 func TestCluster_ConcurrentCallsAreReproducible(t *testing.T) {
 	t.Parallel()
-	requireConcurrentCallsAreReproducible(t, 3, [][]float64{{0, 0}, {0, 1}, {1, 0}, {8, 8}, {8, 9}, {9, 8}, {16, 0}, {16, 1}, {17, 0}}, kmeans.WithSeed(42), kmeans.WithRuns(10))
+	requireConcurrentCallsAreReproducible(
+		t,
+		3,
+		[][]float64{{0, 0}, {0, 1}, {1, 0}, {8, 8}, {8, 9}, {9, 8}, {16, 0}, {16, 1}, {17, 0}},
+		kmeans.WithSeed(42),
+		kmeans.WithRuns(10),
+	)
 }
 
 func TestCluster_ScaledArithmeticConcurrentCallsAreReproducible(t *testing.T) {
 	t.Parallel()
-	requireConcurrentCallsAreReproducible(t, 2, [][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}}, kmeans.WithSeed(3), kmeans.WithRuns(1), kmeans.WithMaxIterations(1))
+	requireConcurrentCallsAreReproducible(
+		t,
+		2,
+		[][]float64{{-1e308}, {-1e308}, {1e308}, {1e308}},
+		kmeans.WithSeed(3),
+		kmeans.WithRuns(1),
+		kmeans.WithMaxIterations(1),
+	)
 }
 
 func requireConcurrentCallsAreReproducible(t *testing.T, k int, data [][]float64, opts ...kmeans.Option) {
@@ -36,7 +49,7 @@ func requireConcurrentCallsAreReproducible(t *testing.T, k int, data [][]float64
 			defer wg.Done()
 			<-start
 			result, err := kmeans.Cluster(data, k, opts...)
-			outcomes <- outcome{result, err}
+			outcomes <- outcome{result: result, err: err}
 		}()
 	}
 	close(start)

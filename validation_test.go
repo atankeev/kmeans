@@ -16,18 +16,28 @@ func TestCluster_InvalidData(t *testing.T) {
 		k    int
 		want error
 	}{
-		{"nil", nil, 1, kmeans.ErrEmptyData},
-		{"empty", [][]float64{}, 1, kmeans.ErrEmptyData},
-		{"nil features", [][]float64{nil, nil}, 1, kmeans.ErrNoFeatures},
-		{"empty features", [][]float64{{}, {}}, 1, kmeans.ErrNoFeatures},
-		{"ragged", [][]float64{{1, 2}, {3}}, 1, kmeans.ErrInvalidData},
-		{"ragged empty first", [][]float64{{}, {1}}, 1, kmeans.ErrInvalidData},
-		{"zero k", [][]float64{{1}, {2}}, 0, kmeans.ErrInvalidK},
-		{"negative k", [][]float64{{1}, {2}}, -1, kmeans.ErrInvalidK},
-		{"too many clusters", [][]float64{{1}, {2}}, 3, kmeans.ErrInvalidK},
-		{"nan", [][]float64{{1, 2}, {math.NaN(), 3}}, 1, kmeans.ErrNonFiniteData},
-		{"positive infinity", [][]float64{{1, 2}, {3, math.Inf(1)}}, 1, kmeans.ErrNonFiniteData},
-		{"negative infinity", [][]float64{{1, 2}, {3, math.Inf(-1)}}, 1, kmeans.ErrNonFiniteData},
+		{name: "nil", data: nil, k: 1, want: kmeans.ErrEmptyData},
+		{name: "empty", data: [][]float64{}, k: 1, want: kmeans.ErrEmptyData},
+		{name: "nil features", data: [][]float64{nil, nil}, k: 1, want: kmeans.ErrNoFeatures},
+		{name: "empty features", data: [][]float64{{}, {}}, k: 1, want: kmeans.ErrNoFeatures},
+		{name: "ragged", data: [][]float64{{1, 2}, {3}}, k: 1, want: kmeans.ErrInvalidData},
+		{name: "ragged empty first", data: [][]float64{{}, {1}}, k: 1, want: kmeans.ErrInvalidData},
+		{name: "zero k", data: [][]float64{{1}, {2}}, k: 0, want: kmeans.ErrInvalidK},
+		{name: "negative k", data: [][]float64{{1}, {2}}, k: -1, want: kmeans.ErrInvalidK},
+		{name: "too many clusters", data: [][]float64{{1}, {2}}, k: 3, want: kmeans.ErrInvalidK},
+		{name: "nan", data: [][]float64{{1, 2}, {math.NaN(), 3}}, k: 1, want: kmeans.ErrNonFiniteData},
+		{
+			name: "positive infinity",
+			data: [][]float64{{1, 2}, {3, math.Inf(1)}},
+			k:    1,
+			want: kmeans.ErrNonFiniteData,
+		},
+		{
+			name: "negative infinity",
+			data: [][]float64{{1, 2}, {3, math.Inf(-1)}},
+			k:    1,
+			want: kmeans.ErrNonFiniteData,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,19 +79,84 @@ func TestCluster_InvalidFinalSettings(t *testing.T) {
 		valid, invalid kmeans.Option
 		want           error
 	}{
-		{"runs zero", kmeans.WithRuns(1), kmeans.WithRuns(0), kmeans.ErrInvalidRuns},
-		{"runs negative", kmeans.WithRuns(1), kmeans.WithRuns(-1), kmeans.ErrInvalidRuns},
-		{"iterations zero", kmeans.WithMaxIterations(2), kmeans.WithMaxIterations(0), kmeans.ErrInvalidMaxIterations},
-		{"iterations negative", kmeans.WithMaxIterations(2), kmeans.WithMaxIterations(-1), kmeans.ErrInvalidMaxIterations},
-		{"trials zero", kmeans.WithNCentroidsInitTrials(1), kmeans.WithNCentroidsInitTrials(0), kmeans.ErrInvalidNCentroidsInitTrials},
-		{"trials negative", kmeans.WithNCentroidsInitTrials(1), kmeans.WithNCentroidsInitTrials(-1), kmeans.ErrInvalidNCentroidsInitTrials},
-		{"tolerance zero", kmeans.WithTolerance(1e-4), kmeans.WithTolerance(0), kmeans.ErrInvalidTolerance},
-		{"tolerance negative", kmeans.WithTolerance(1e-4), kmeans.WithTolerance(-1), kmeans.ErrInvalidTolerance},
-		{"tolerance nan", kmeans.WithTolerance(1e-4), kmeans.WithTolerance(math.NaN()), kmeans.ErrInvalidTolerance},
-		{"tolerance positive infinity", kmeans.WithTolerance(1e-4), kmeans.WithTolerance(math.Inf(1)), kmeans.ErrInvalidTolerance},
-		{"tolerance negative infinity", kmeans.WithTolerance(1e-4), kmeans.WithTolerance(math.Inf(-1)), kmeans.ErrInvalidTolerance},
-		{"init empty", kmeans.WithInitMethod(kmeans.InitRandom), kmeans.WithInitMethod(""), kmeans.ErrInvalidInitMethod},
-		{"init unknown", kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus), kmeans.WithInitMethod("kmeans++"), kmeans.ErrInvalidInitMethod},
+		{
+			name:    "runs zero",
+			valid:   kmeans.WithRuns(1),
+			invalid: kmeans.WithRuns(0),
+			want:    kmeans.ErrInvalidRuns,
+		},
+		{
+			name:    "runs negative",
+			valid:   kmeans.WithRuns(1),
+			invalid: kmeans.WithRuns(-1),
+			want:    kmeans.ErrInvalidRuns,
+		},
+		{
+			name:    "iterations zero",
+			valid:   kmeans.WithMaxIterations(2),
+			invalid: kmeans.WithMaxIterations(0),
+			want:    kmeans.ErrInvalidMaxIterations,
+		},
+		{
+			name:    "iterations negative",
+			valid:   kmeans.WithMaxIterations(2),
+			invalid: kmeans.WithMaxIterations(-1),
+			want:    kmeans.ErrInvalidMaxIterations,
+		},
+		{
+			name:    "trials zero",
+			valid:   kmeans.WithNCentroidsInitTrials(1),
+			invalid: kmeans.WithNCentroidsInitTrials(0),
+			want:    kmeans.ErrInvalidNCentroidsInitTrials,
+		},
+		{
+			name:    "trials negative",
+			valid:   kmeans.WithNCentroidsInitTrials(1),
+			invalid: kmeans.WithNCentroidsInitTrials(-1),
+			want:    kmeans.ErrInvalidNCentroidsInitTrials,
+		},
+		{
+			name:    "tolerance zero",
+			valid:   kmeans.WithTolerance(1e-4),
+			invalid: kmeans.WithTolerance(0),
+			want:    kmeans.ErrInvalidTolerance,
+		},
+		{
+			name:    "tolerance negative",
+			valid:   kmeans.WithTolerance(1e-4),
+			invalid: kmeans.WithTolerance(-1),
+			want:    kmeans.ErrInvalidTolerance,
+		},
+		{
+			name:    "tolerance nan",
+			valid:   kmeans.WithTolerance(1e-4),
+			invalid: kmeans.WithTolerance(math.NaN()),
+			want:    kmeans.ErrInvalidTolerance,
+		},
+		{
+			name:    "tolerance positive infinity",
+			valid:   kmeans.WithTolerance(1e-4),
+			invalid: kmeans.WithTolerance(math.Inf(1)),
+			want:    kmeans.ErrInvalidTolerance,
+		},
+		{
+			name:    "tolerance negative infinity",
+			valid:   kmeans.WithTolerance(1e-4),
+			invalid: kmeans.WithTolerance(math.Inf(-1)),
+			want:    kmeans.ErrInvalidTolerance,
+		},
+		{
+			name:    "init empty",
+			valid:   kmeans.WithInitMethod(kmeans.InitRandom),
+			invalid: kmeans.WithInitMethod(""),
+			want:    kmeans.ErrInvalidInitMethod,
+		},
+		{
+			name:    "init unknown",
+			valid:   kmeans.WithInitMethod(kmeans.InitKMeansPlusPlus),
+			invalid: kmeans.WithInitMethod("kmeans++"),
+			want:    kmeans.ErrInvalidInitMethod,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -110,7 +185,7 @@ func TestCluster_RejectsUnsupportedOptions(t *testing.T) {
 		name   string
 		option kmeans.Option
 	}{
-		{"nil", nil}, {"wrapper value", wrappedOption{valid}}, {"wrapper pointer", &wrappedOption{valid}},
+		{"nil", nil}, {"wrapper value", wrappedOption{Option: valid}}, {"wrapper pointer", &wrappedOption{Option: valid}},
 		{"nil embedded value", wrappedOption{}}, {"nil embedded pointer", &wrappedOption{}}, {"typed nil", typedNil},
 	}
 	for _, tt := range tests {

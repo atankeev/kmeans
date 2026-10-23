@@ -21,7 +21,13 @@ func TestCluster_SelectsLowestInertiaBeforePublicUnderflow(t *testing.T) {
 					for i, value := range original {
 						data[i] = []float64{value * scale}
 					}
-					result, err := kmeans.Cluster(data, 2, kmeans.WithInitMethod(method), kmeans.WithSeed(0), kmeans.WithRuns(nInit))
+					result, err := kmeans.Cluster(
+						data,
+						2,
+						kmeans.WithInitMethod(method),
+						kmeans.WithSeed(0),
+						kmeans.WithRuns(nInit),
+					)
 					require.NoError(t, err)
 					if nInit == 1 {
 						assertPartitionInOriginalUnits(t, result, original, scale, 4, []float64{1.75, 12}, 40.75)
@@ -37,7 +43,15 @@ func TestCluster_SelectsLowestInertiaBeforePublicUnderflow(t *testing.T) {
 	}
 }
 
-func assertPartitionInOriginalUnits(t *testing.T, result *kmeans.Result, original []float64, scale float64, split int, centers []float64, inertia float64) {
+func assertPartitionInOriginalUnits(
+	t *testing.T,
+	result *kmeans.Result,
+	original []float64,
+	scale float64,
+	split int,
+	centers []float64,
+	inertia float64,
+) {
 	t.Helper()
 	require.NotNil(t, result)
 	require.Len(t, result.Centroids, 2)

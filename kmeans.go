@@ -87,11 +87,15 @@ func (k *kmeans) cluster(data [][]float64) (*Result, error) {
 	distances := make([]scaledValue, len(data))
 	randomState := k.newRandomState()
 	tolerance := calculateScaledTolerance(data, k.config.Tol)
-	var bestResult *Result
-	var bestInertia scaledValue
-	var bestLabels []int
+	var (
+		bestResult  *Result
+		bestInertia scaledValue
+		bestLabels  []int
+	)
 	for range k.config.NInit {
-		result, inertia, _, err := k.lloydKMeans(data, labels, previousLabels, distances, randomState, tolerance)
+		result, inertia, _, err := k.lloydKMeans(
+			data, labels, previousLabels, distances, randomState, tolerance,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -108,52 +112,8 @@ func (k *kmeans) cluster(data [][]float64) (*Result, error) {
 	return bestResult, nil
 }
 
-func resultIsFinite(result *Result) bool {
-	if math.IsNaN(result.Inertia) || math.IsInf(result.Inertia, 0) {
-		return false
-	}
-
-	return centersAreFinite(result.Centroids)
-}
-
 func (k *kmeans) newRandomState() *rand.Rand {
 	return rand.New(rand.NewSource(k.config.RandomSeed))
-}
-
-// validateData rejects empty data, inconsistent dimensions, non-finite coordinates,
-// missing features, and a cluster count greater than the number of samples.
-func validateData(data [][]float64, nClusters int) error {
-	if len(data) == 0 {
-		return ErrEmptyData
-	}
-
-	expectedDim := len(data[0])
-	for pointIndex, point := range data {
-		if len(point) != expectedDim {
-			return fmt.Errorf("%w: data point at index %d has dimension %d, expected %d", ErrInvalidData, pointIndex, len(point), expectedDim)
-		}
-
-		for dimensionIndex, coordinate := range point {
-			if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
-				return fmt.Errorf("%w at point %d, dimension %d", ErrNonFiniteData, pointIndex, dimensionIndex)
-			}
-		}
-	}
-
-	if expectedDim == 0 {
-		return ErrNoFeatures
-	}
-
-	if nClusters > len(data) {
-		return fmt.Errorf(
-			"%w: number of clusters (%d) cannot be greater than number of samples (%d)",
-			ErrInvalidK,
-			nClusters,
-			len(data),
-		)
-	}
-
-	return nil
 }
 
 // initRandomCentroids copies samples at distinct randomly selected indexes.
@@ -211,29 +171,30 @@ func (k *kmeans) initKMeansPlusPlusCentroidsWithDistances(
 		// multiple trials choose the candidate with the lowest resulting inertia.
 		if nLocalTrials <= 1 {
 			addCentroid(selectUniqueScaledIndex(distances, usedIndices, randomState))
+			continue
+		}
+
+		bestCentroidIdx := -1
+		var bestInertia scaledValue
+
+		for range nLocalTrials {
+			candidateIdx := selectUniqueScaledIndex(distances, usedIndices, randomState)
+
+			// Calculate the inertia with this candidate without materializing the
+			// candidate as a centroid: min(existing distance, distance to candidate)
+			inertia := scaledCandidateCost(distances, data, data[candidateIdx])
+
+			if bestCentroidIdx == -1 || inertia.compare(bestInertia) < 0 {
+				bestInertia = inertia
+				bestCentroidIdx = candidateIdx
+			}
+		}
+
+		if bestCentroidIdx != -1 {
+			addCentroid(bestCentroidIdx)
 		} else {
-			bestCentroidIdx := -1
-			var bestInertia scaledValue
-
-			for range nLocalTrials {
-				candidateIdx := selectUniqueScaledIndex(distances, usedIndices, randomState)
-
-				// Calculate the inertia with this candidate without materializing the
-				// candidate as a centroid: min(existing distance, distance to candidate)
-				inertia := scaledCandidateCost(distances, data, data[candidateIdx])
-
-				if bestCentroidIdx == -1 || inertia.compare(bestInertia) < 0 {
-					bestInertia = inertia
-					bestCentroidIdx = candidateIdx
-				}
-			}
-
-			if bestCentroidIdx != -1 {
-				addCentroid(bestCentroidIdx)
-			} else {
-				// If no candidate was selected, retain progress with an unused sample.
-				addCentroid(selectUniqueScaledIndex(distances, usedIndices, randomState))
-			}
+			// If no candidate was selected, retain progress with an unused sample.
+			addCentroid(selectUniqueScaledIndex(distances, usedIndices, randomState))
 		}
 	}
 
@@ -315,7 +276,7 @@ func (k *kmeans) lloydKMeans(
 	labels = assignPointsToClusters(data, centers, labels)
 
 	inertia := calculateScaledInertiaByLabels(data, centers, labels)
-	finalInertia, representable := inertia.float64()
+	finalInertia, representable := inertia.toFloat64()
 	if !representable {
 		return nil, scaledValue{}, false, fmt.Errorf("calculate inertia: %w", ErrNumericalOverflow)
 	}
@@ -327,18 +288,6 @@ func (k *kmeans) lloydKMeans(
 		Converged:  converged,
 		Iterations: iterations,
 	}, inertia, converged, nil
-}
-
-func centersAreFinite(centers [][]float64) bool {
-	for _, center := range centers {
-		for _, coordinate := range center {
-			if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
-				return false
-			}
-		}
-	}
-
-	return true
 }
 
 // updateCentersLloydInto computes new cluster centers (centroids) into the provided dst buffer
@@ -421,6 +370,68 @@ func (k *kmeans) relocateEmptyClusters(
 		counts[emptyCluster]++
 		labels[candidate] = emptyCluster
 	}
+}
+
+func resultIsFinite(result *Result) bool {
+	if math.IsNaN(result.Inertia) || math.IsInf(result.Inertia, 0) {
+		return false
+	}
+
+	return centersAreFinite(result.Centroids)
+}
+
+// validateData rejects empty data, inconsistent dimensions, non-finite coordinates,
+// missing features, and a cluster count greater than the number of samples.
+func validateData(data [][]float64, nClusters int) error {
+	if len(data) == 0 {
+		return ErrEmptyData
+	}
+
+	expectedDim := len(data[0])
+	for pointIndex, point := range data {
+		if len(point) != expectedDim {
+			return fmt.Errorf(
+				"%w: data point at index %d has dimension %d, expected %d",
+				ErrInvalidData,
+				pointIndex,
+				len(point),
+				expectedDim,
+			)
+		}
+
+		for dimensionIndex, coordinate := range point {
+			if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
+				return fmt.Errorf("%w at point %d, dimension %d", ErrNonFiniteData, pointIndex, dimensionIndex)
+			}
+		}
+	}
+
+	if expectedDim == 0 {
+		return ErrNoFeatures
+	}
+
+	if nClusters > len(data) {
+		return fmt.Errorf(
+			"%w: number of clusters (%d) cannot be greater than number of samples (%d)",
+			ErrInvalidK,
+			nClusters,
+			len(data),
+		)
+	}
+
+	return nil
+}
+
+func centersAreFinite(centers [][]float64) bool {
+	for _, center := range centers {
+		for _, coordinate := range center {
+			if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 // newCenterBuffer allocates a flat-backed buffer with nClusters rows of dim columns.
