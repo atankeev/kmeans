@@ -16,9 +16,19 @@ linters:
     - testifylint # Use testify assertions correctly.
     - revive # Enforce the selected error naming, message, and flow rules below.
     - predeclared # Keep built-in identifiers available and unambiguous.
+    - nolintlint # Require specific, explained, effective suppressions.
+    - errorlint # Preserve wrapped-error matching without requiring wrapping.
   settings:
     errcheck:
       check-type-assertions: true
+    nolintlint:
+      require-specific: true
+      require-explanation: true
+      allow-unused: false
+    errorlint:
+      errorf: false
+      asserts: true
+      comparison: true
     revive:
       enable-all-rules: false
       enable-default-rules: false
@@ -26,6 +36,7 @@ linters:
         - name: error-naming
         - name: error-strings
         - name: indent-error-flow
+        - name: redundant-import-alias
 
 formatters:
   enable:

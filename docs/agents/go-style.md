@@ -61,17 +61,20 @@ The current [configuration](../../.golangci.yml) provides partial coverage:
 | --- | --- |
 | `goimports` | Formatting and standard-library/other import grouping. |
 | `errcheck` | Unchecked returned errors and unchecked type assertions. |
-| `revive` | Only `error-naming`, `error-strings`, and `indent-error-flow`; other default rules remain disabled. |
+| `revive` | Only `error-naming`, `error-strings`, `indent-error-flow`, and `redundant-import-alias`; other default rules remain disabled. |
 | `predeclared` | Shadowing of built-in identifiers. |
+| `nolintlint` | Suppressions must name a specific linter, explain the reason, and suppress an actual finding. |
+| `errorlint` | Error comparisons and type assertions that bypass wrapping; `%w` wrapping is not required. |
 | `govet` | Suspicious constructs, including some unkeyed literals; not all local struct literals. |
 | `staticcheck` | Correctness and simplification; not every style convention. |
 | `ineffassign`, `unused` | Ineffective assignments and unused code. |
 | `paralleltest`, `testifylint` | Project test parallelism and assertion-use policy. |
 
 The added checks target unchecked assertions, recognizable error names,
-lowercase error messages without trailing punctuation, flat error paths, and
-unambiguous built-in names. They were verified with representative violating
-and valid examples; they do not establish full guide compliance.
+lowercase error messages without trailing punctuation, flat error paths,
+unambiguous built-in names, meaningful suppressions, wrapped-error matching,
+and imports without redundant aliases. They were verified with representative
+violating and valid examples; they do not establish full guide compliance.
 
 The checklist and full-guide review cover judgment and gaps left by these tools.
 Review control-flow suggestions before applying them: rewrites can change
