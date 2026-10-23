@@ -9,6 +9,13 @@ Use the user's preferred language for conversation with the user.
 Before editing repository files, committing, opening a PR, or merging, read and
 follow `docs/agents/git-workflow.md`. Deliver changes to `main` through a PR.
 
+## Go style
+
+Before changing Go production code or tests, and before a Standards review of
+Go changes, read [the project Go style guidance](docs/agents/go-style.md) and
+the pinned Uber Go Style Guide linked there. Apply both to the complete task
+diff; explicit project requirements and accepted ADRs take precedence.
+
 ## Agent skills
 
 ### Issue tracker
