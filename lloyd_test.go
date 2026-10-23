@@ -171,7 +171,14 @@ func TestUpdateCentersLloydInto(t *testing.T) {
 			k := &kmeans{config: config{NClusters: tt.nClusters}}
 			got := newCenterBuffer(k.config.NClusters, len(tt.centers[0]))
 			run := func() {
-				k.updateCentersLloydInto(got, make([]int, k.config.NClusters), make([]scaledValue, len(tt.data)), tt.data, tt.labels, tt.centers)
+				k.updateCentersLloydInto(
+					got,
+					make([]int, k.config.NClusters),
+					make([]scaledValue, len(tt.data)),
+					tt.data,
+					tt.labels,
+					tt.centers,
+				)
 			}
 			if tt.wantPanic {
 				require.Panics(t, run)
@@ -223,7 +230,11 @@ func TestCluster_Lloyd_RecoversEmptyClusters(t *testing.T) {
 		counts[label]++
 		assignedDistance := requireFiniteScaled(t, scaledSquaredDistance(data[pointIndex], first.Centroids[label]))
 		for _, centroid := range first.Centroids {
-			require.LessOrEqual(t, assignedDistance, requireFiniteScaled(t, scaledSquaredDistance(data[pointIndex], centroid)))
+			require.LessOrEqual(
+				t,
+				assignedDistance,
+				requireFiniteScaled(t, scaledSquaredDistance(data[pointIndex], centroid)),
+			)
 		}
 	}
 	for _, count := range counts {

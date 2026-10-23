@@ -10,7 +10,7 @@ import (
 	"github.com/atankeev/kmeans"
 )
 
-const maxFuzzBytes = 1024
+const _maxFuzzBytes = 1024
 
 // The first seven bytes select bounded dimensions and options. Remaining bytes
 // encode little-endian float64 coordinates; missing bytes are zero padded.
@@ -77,7 +77,7 @@ func FuzzClusterFinite(f *testing.F) {
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, encoded []byte) {
 		// Reject before decoder allocations, including oversized corpus entries.
-		if len(encoded) > maxFuzzBytes {
+		if len(encoded) > _maxFuzzBytes {
 			return
 		}
 		c := decodeFuzzCase(encoded)
@@ -118,8 +118,10 @@ func equalFuzzData(a, b [][]float64) bool {
 func checkFuzzCalls(t *testing.T, c fuzzCase, opts []kmeans.Option, wantErr error) {
 	t.Helper()
 	before := cloneFuzzData(c.data)
-	var previous *kmeans.Result
-	var previousErr error
+	var (
+		previous    *kmeans.Result
+		previousErr error
+	)
 	for call := range 2 {
 		result, err := kmeans.Cluster(c.data, c.k, opts...)
 		if !equalFuzzData(before, c.data) {
@@ -198,22 +200,22 @@ func checkFuzzResult(t *testing.T, result *kmeans.Result, c fuzzCase) {
 // including typed-nil pointers, without depending on private configuration.
 type fuzzWrappedOption struct{ kmeans.Option }
 
-const fuzzInvalidKinds = 23
+const _fuzzInvalidKinds = 23
 
 func FuzzClusterInvalid(f *testing.F) {
-	for defect := range byte(fuzzInvalidKinds) {
+	for defect := range byte(_fuzzInvalidKinds) {
 		f.Add(append([]byte{defect}, fuzzSeed([7]byte{2, 1, 1, 2, 9, 2}, 0, 1, 2, 3, 4, 5)...))
 	}
 	// The coordinate bits supply a non-canonical NaN payload in the NaN case.
 	f.Add(append([]byte{17}, fuzzSeed([7]byte{}, math.Float64frombits(0xfff8000000000042))...))
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, encoded []byte) {
-		if len(encoded) > maxFuzzBytes {
+		if len(encoded) > _maxFuzzBytes {
 			return
 		}
 		var defect byte
 		if len(encoded) > 0 {
-			defect, encoded = encoded[0]%fuzzInvalidKinds, encoded[1:]
+			defect, encoded = encoded[0]%_fuzzInvalidKinds, encoded[1:]
 		}
 		for _, method := range []kmeans.InitMethod{kmeans.InitKMeansPlusPlus, kmeans.InitRandom} {
 			c := decodeFuzzCase(encoded)
@@ -271,7 +273,7 @@ func FuzzClusterInvalid(f *testing.F) {
 				opts = append(opts, nil)
 				wantErr = kmeans.ErrInvalidOption
 			case 21:
-				opts = append(opts, fuzzWrappedOption{kmeans.WithSeed(42)})
+				opts = append(opts, fuzzWrappedOption{Option: kmeans.WithSeed(42)})
 				wantErr = kmeans.ErrInvalidOption
 			case 22:
 				var option *fuzzWrappedOption

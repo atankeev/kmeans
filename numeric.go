@@ -93,7 +93,7 @@ func (value scaledValue) compare(other scaledValue) int {
 	return 0
 }
 
-func (value scaledValue) float64() (float64, bool) {
+func (value scaledValue) toFloat64() (float64, bool) {
 	result := math.Ldexp(value.fraction, value.exponent)
 	return result, !math.IsInf(result, 0) && !math.IsNaN(result)
 }
