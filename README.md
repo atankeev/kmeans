@@ -422,6 +422,45 @@ blanket-exclude tests. Run `go test -race ./...` for concurrency-related changes
 The dedicated CI check is named `lint`; it runs on pull requests and pushes to
 `main` with a ten-minute timeout and supplies CI's vet and formatting checks.
 
+### Numerical fuzzing
+
+Ordinary `go test ./...` runs the committed seeds for both public `Cluster` fuzz
+targets without external tools. To mutate inputs locally, run each target with a
+bounded budget and two workers:
+
+```bash
+go test -run='^$' -fuzz='^FuzzClusterFinite$' -fuzztime=60s -parallel=2 .
+go test -run='^$' -fuzz='^FuzzClusterInvalid$' -fuzztime=60s -parallel=2 .
+```
+
+Cases use seed `42`, both initialization methods, and repeated calls to check
+reproducibility in the same environment. Encoded inputs above 1 KiB are rejected
+before decoding. Cases contain at most 16 samples, 4 features, 4 clusters,
+3 initialization runs, 10 iterations, and 3 candidate trials. Invalid cases
+introduce one bounded validation defect. The checks cover result dimensions,
+labels, finite centroids and non-negative finite inertia, iteration counts,
+input preservation (including NaN payloads and signed zero), and all result fields
+across repeated calls. Finite input may return `ErrNumericalOverflow`; reaching
+the iteration limit remains a successful usable non-converged result.
+
+The [Numerical fuzzing workflow](https://github.com/atankeev/kmeans/actions/workflows/fuzz.yml)
+runs daily at 05:37 UTC on Linux with stable Go, sequentially for 2 minutes per
+target with 2 workers. **Run workflow** accepts an integer budget of 1–10 minutes
+per target, defaulting to 2. The job timeout remains 15 minutes, including setup;
+large manual budgets can exceed it. A timeout is a failed run, not completion of
+the requested budget. Mutation is separate from the required PR checks; those
+checks execute the seed corpus through ordinary tests.
+
+Both targets are attempted even if the first fails. Workflow artifacts retain
+logs, available `testdata/fuzz` reproducing inputs, and the Go fuzz cache for
+30 days, including failed runs. Artifact collection after cancellation or a job
+timeout is best effort. For a failure, download `numerical-fuzz-evidence`, inspect
+the target log and minimized input, and reproduce with the printed `go test
+-run=...` command. Restore downloaded inputs under `testdata/fuzz/<target>/` when
+needed. Investigate failures in separate linked issues and preserve confirmed
+minimized regressions in the committed corpus; do not disable checks to obtain a
+passing run. Algorithm defects block completion of the fuzzing setup until fixed.
+
 ### Vulnerability scanning
 
 Use the latest stable Go release, Make, and network access to install the pinned
