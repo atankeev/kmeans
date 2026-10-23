@@ -60,19 +60,24 @@ The current [configuration](../../.golangci.yml) provides partial coverage:
 | Check | Coverage and limits |
 | --- | --- |
 | `goimports` | Formatting and standard-library/other import grouping. |
-| `errcheck` | Unchecked returned errors; type-assertion checking is not enabled. |
+| `errcheck` | Unchecked returned errors and unchecked type assertions. |
+| `revive` | Only `error-naming`, `error-strings`, and `indent-error-flow`; other default rules remain disabled. |
+| `predeclared` | Shadowing of built-in identifiers. |
 | `govet` | Suspicious constructs, including some unkeyed literals; not all local struct literals. |
 | `staticcheck` | Correctness and simplification; not every style convention. |
 | `ineffassign`, `unused` | Ineffective assignments and unused code. |
 | `paralleltest`, `testifylint` | Project test parallelism and assertion-use policy. |
 
+The added checks target unchecked assertions, recognizable error names,
+lowercase error messages without trailing punctuation, flat error paths, and
+unambiguous built-in names. They were verified with representative violating
+and valid examples; they do not establish full guide compliance.
+
 The checklist and full-guide review cover judgment and gaps left by these tools.
-No additional checks are enabled by this adoption. Useful candidates for a
-follow-up include `errcheck.check-type-assertions`, selected `revive` naming,
-error-string and control-flow rules, and `predeclared` for built-in shadowing.
-Evaluate overlap and false positives first: control-flow rewrites can change
-variable scope, and blanket error-wrapping enforcement can reject intentional
-`%v` abstraction permitted by the guide. Before enabling a selected check,
-demonstrate representative failing and passing examples, explain its scope and
-exclusions, and pass the required project checks. Keep line wrapping a review
-judgment rather than imposing a hard 99-character check.
+Review control-flow suggestions before applying them: rewrites can change
+variable scope. Preserve intentional `%v` abstraction permitted by the guide;
+blanket error-wrapping rules are not enabled. Line wrapping remains a review
+judgment without a hard 99-character check. Before enabling further checks,
+evaluate overlap and false positives, demonstrate representative failing and
+passing examples, explain scope and exclusions, and pass the required project
+checks.

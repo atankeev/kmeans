@@ -14,6 +14,18 @@ linters:
     - unused # Remove unreachable declarations.
     - paralleltest # Run independent tests in parallel.
     - testifylint # Use testify assertions correctly.
+    - revive # Enforce the selected error naming, message, and flow rules below.
+    - predeclared # Keep built-in identifiers available and unambiguous.
+  settings:
+    errcheck:
+      check-type-assertions: true
+    revive:
+      enable-all-rules: false
+      enable-default-rules: false
+      rules:
+        - name: error-naming
+        - name: error-strings
+        - name: indent-error-flow
 
 formatters:
   enable:
