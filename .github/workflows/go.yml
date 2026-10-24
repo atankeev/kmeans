@@ -151,6 +151,17 @@ jobs:
         retention-days: 30
         if-no-files-found: error
 
+    - name: Require a nonempty coverage profile
+      run: test -s coverage.out
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+      with:
+        files: coverage.out
+        disable_search: true
+        fail_ci_if_error: true
+        token: ${{ secrets.CODECOV_TOKEN }}
+
   build:
     name: build
     if: ${{ always() }}
