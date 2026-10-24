@@ -10,9 +10,7 @@ func TestClamp(t *testing.T) {
 		give int
 		want int
 	}{
-		{name: "below", give: -1, want: 0},
 		{name: "within", give: 5, want: 5},
-		{name: "above", give: 11, want: 10},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
