@@ -62,7 +62,7 @@ func Cluster(data [][]float64, nClusters int, opts ...Option) (*Result, error) {
 	for _, option := range opts {
 		builtIn, ok := option.(optionFunc)
 		if !ok || builtIn == nil {
-			return nil, ErrInvalidOption
+			return nil, fmt.Errorf("kmeans.Cluster: %w", ErrInvalidOption)
 		}
 		builtIn.apply(cfg)
 	}

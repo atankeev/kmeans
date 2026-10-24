@@ -195,6 +195,7 @@ func TestCluster_RejectsUnsupportedOptions(t *testing.T) {
 				result, err := kmeans.Cluster([][]float64{{0}, {2}}, 1, tt.option, valid)
 				require.Nil(t, result)
 				require.ErrorIs(t, err, kmeans.ErrInvalidOption)
+				require.Contains(t, err.Error(), "kmeans.Cluster")
 			})
 		})
 	}
