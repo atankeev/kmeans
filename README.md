@@ -379,7 +379,7 @@ the job. Upload success means the report was accepted for processing, not that
 the patch coverage target passed.
 
 The repository's [Codecov configuration](codecov.yml) sets a target of **85%**
-and a threshold of **0%** for the expected `codecov/patch` check: changed executable lines
+and a threshold of **0%** for the `codecov/patch` check: changed executable lines
 must reach at least 85% coverage, with no allowed shortfall. The overall
 `codecov/project` result is informational and has no blocking coverage target.
 Documentation-only and tests-only PRs with no changed executable lines pass the
@@ -416,14 +416,21 @@ outage, rerun once Codecov recovers. If upload succeeded but a check is missing,
 inspect the commit and processing status in Codecov and its GitHub App access.
 Do not weaken protection or mark a missing report as passed to unblock a merge.
 
-The 85% patch configuration does not itself make `codecov/patch` a required
-GitHub check. Existing required checks remain `lint` and `build`; protection
-rollout is tracked in [issue #34](https://github.com/atankeev/kmeans/issues/34).
-Before requiring the observed check name, verify below-85% failure and
-at-least-85% success, no-executable-line PRs, missing reports, and real fork and
-Dependabot uploads. Verify that a failed required patch check blocks merging
-without merging dummy changes. These external-service and protection checks
-remain unverified until recorded on
+The active `main` protection ruleset requires `lint` and `build` from GitHub
+Actions and `codecov/patch` from the Codecov GitHub App (integration ID 254).
+A successful upload alone cannot satisfy the required patch check; Codecov
+must publish its result to GitHub. Keep the App installed and authorized for
+this repository.
+
+Live verification used temporary PRs with identical executable changes and
+different test coverage. [PR #58](https://github.com/atankeev/kmeans/pull/58)
+had 100% patch coverage and a successful required check; GitHub reported it
+mergeable. [PR #59](https://github.com/atankeev/kmeans/pull/59) had 60% patch
+coverage and a failing required check; GitHub blocked merging while all ordinary
+CI checks passed. Both probes were closed without merging.
+
+Further acceptance cases, including the exact 85% boundary, missing reports,
+and fork and Dependabot uploads, remain tracked in
 [issue #39](https://github.com/atankeev/kmeans/issues/39).
 
 ### Linting
