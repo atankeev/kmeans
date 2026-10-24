@@ -134,6 +134,9 @@ jobs:
     - name: Test with race detection and atomic coverage
       run: go test -race -shuffle=on -count=1 -covermode=atomic -coverprofile=coverage.out ./...
 
+    - name: Simulate missing expected coverage report
+      run: unlink coverage.out
+
     - name: Publish function coverage summary
       run: |
         go tool cover -func=coverage.out > coverage.txt
