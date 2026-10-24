@@ -1,12 +1,6 @@
 name: Benchmarks
 
 on:
-  # Temporary pre-merge verification trigger; removed after recording evidence.
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/benchmarks.yml'
-      - 'scripts/validate-benchmarks.awk'
   schedule:
     - cron: '0 6 * * 3'
   workflow_dispatch:
