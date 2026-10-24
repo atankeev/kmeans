@@ -374,7 +374,7 @@ succeeds. These checks preserve the platform-local numerical and
 
 The race/coverage job uploads only `coverage.out` to
 [Codecov](https://app.codecov.io/gh/atankeev/kmeans) using the pinned official
-v5 action. A missing, empty, or invalid profile fails CI; upload errors also fail
+action. A missing, empty, or invalid profile fails CI; upload errors also fail
 the job. Upload success means the report was accepted for processing, not that
 the patch coverage target passed.
 
@@ -403,8 +403,9 @@ Fork PRs do not receive Actions secrets. Codecov supports
 through the official action's unprotected-branch naming; verify this path for
 the repository. Dependabot PRs use Dependabot secrets rather than ordinary
 Actions secrets: configure a Dependabot repository secret named `CODECOV_TOKEN`
-as described in the [action's setup guide](https://github.com/codecov/codecov-action/tree/v5#dependabot).
-This separate Dependabot secret remains pending owner setup.
+as described in the [action's setup guide](https://github.com/codecov/codecov-action#dependabot).
+Dependabot uploads and the required patch check were verified in
+[PR #62](https://github.com/atankeev/kmeans/pull/62).
 Keep fork and Dependabot uploads working without granting their workflows write
 permissions or exposing secrets to untrusted code.
 
@@ -416,8 +417,11 @@ outage, rerun once Codecov recovers. If upload succeeded but a check is missing,
 inspect the commit and processing status in Codecov and its GitHub App access.
 Do not weaken protection or mark a missing report as passed to unblock a merge.
 
-The active `main` protection ruleset requires `lint` and `build` from GitHub
-Actions and `codecov/patch` from the Codecov GitHub App (integration ID 254).
+The active `main` protection ruleset requires the compatibility, platform smoke,
+race/coverage, lint, build, and vulnerability checks from GitHub Actions, plus
+`codecov/patch` from the Codecov GitHub App (integration ID 254). See
+[required checks for main](docs/branch-protection.md) for exact contexts,
+publisher identities, protection settings, and maintenance instructions.
 A successful upload alone cannot satisfy the required patch check; Codecov
 must publish its result to GitHub. Keep the App installed and authorized for
 this repository.
@@ -576,8 +580,8 @@ and the scan result before merging. Other transitive dependencies do not receive
 separate version-update PRs from this entry. To maintain the pin manually, update
 the nested module and its checksums, then run `make vuln`; do not add a second
 version pin to commands or change the root module for scanner maintenance.
-The scheduled run alone is not a merge gate; required-check policy is tracked in
-issue #34.
+The scheduled run alone is not a merge gate; the PR `govulncheck` context is
+required by the [main protection policy](docs/branch-protection.md).
 
 This library was developed with the assistance of AI assistants.
 
