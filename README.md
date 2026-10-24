@@ -461,6 +461,17 @@ needed. Investigate failures in separate linked issues and preserve confirmed
 minimized regressions in the committed corpus; do not disable checks to obtain a
 passing run. Algorithm defects block completion of the fuzzing setup until fixed.
 
+### Benchmarks
+
+The [Benchmarks workflow](https://github.com/atankeev/kmeans/actions/workflows/benchmarks.yml)
+runs weekly on Wednesdays at 06:00 UTC and supports manual branch selection.
+It measures all six current cases five times with Go 1.27.2 and `GOMAXPROCS=1`,
+and retains raw results and environment metadata for 90 days. Benchmark failures
+or incomplete measurements fail the run; there is no PR timing threshold.
+See [benchmark measurements and comparisons](docs/benchmarks.md) for artifacts,
+local alternating baseline/candidate measurements, the pinned `benchstat` tool,
+and limits on comparisons across shared runners.
+
 ### Vulnerability scanning
 
 Use the latest stable Go release, Make, and network access to install the pinned

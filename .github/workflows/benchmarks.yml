@@ -1,0 +1,93 @@
+name: Benchmarks
+
+on:
+  schedule:
+    - cron: '0 6 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmarks:
+    name: Linux x64 / Go 1.27.2 benchmarks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+      GOMAXPROCS: '1'
+      GOFLAGS: ''
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up benchmark Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: '1.27.2'
+        cache: true
+
+    - name: Record measurement environment
+      shell: bash
+      run: |
+        mkdir -p benchmark-evidence
+        {
+          printf 'Commit: %s\n' "$(git rev-parse HEAD)"
+          printf 'Run: %s; attempt: %s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          printf 'Ref: %s\n' "$GITHUB_REF"
+          printf 'Runner image: %s %s\n' "$ImageOS" "$ImageVersion"
+          date -u '+Measured at: %Y-%m-%dT%H:%M:%SZ'
+          go version
+          go env GOOS GOARCH GOTOOLCHAIN GOFLAGS
+          printf 'GOMAXPROCS: %s (explicit runtime override)\n' "$GOMAXPROCS"
+          printf 'Available processors: %s; installed processors: %s\n' "$(nproc)" "$(nproc --all)"
+          uname -a
+          lscpu
+          printf "Command: go test -run '^$' -bench . -benchmem -count=5 ./...\n"
+        } | tee benchmark-evidence/environment.txt
+
+    - name: Measure benchmarks
+      id: measure
+      shell: bash
+      run: |
+        set -o pipefail
+        go test -run '^$' -bench . -benchmem -count=5 ./... 2>&1 | tee benchmark-evidence/benchmarks.txt
+
+    - name: Require complete benchmark suite
+      id: validate
+      shell: bash
+      run: |
+        set -o pipefail
+        awk -f scripts/validate-benchmarks.awk benchmark-evidence/benchmarks.txt | tee benchmark-evidence/validation.txt
+
+    - name: Record completion status
+      if: ${{ always() }}
+      env:
+        MEASUREMENT_OUTCOME: ${{ steps.measure.outcome }}
+        VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+      shell: bash
+      run: |
+        mkdir -p benchmark-evidence
+        {
+          printf 'Run: %s; attempt: %s\nCommit: %s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA"
+          printf 'Measurement: %s\nValidation: %s\n' "$MEASUREMENT_OUTCOME" "$VALIDATION_OUTCOME"
+          if [[ "$MEASUREMENT_OUTCOME" == success && "$VALIDATION_OUTCOME" == success ]]; then
+            printf 'Complete: six cases with five measurements each.\n'
+          else
+            printf 'INCOMPLETE: do not use this run as a complete measurement series.\n'
+          fi
+        } | tee benchmark-evidence/status.txt
+
+    - name: Upload benchmark evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: benchmark-evidence
+        path: benchmark-evidence/
+        retention-days: 90
+        if-no-files-found: error
