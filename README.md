@@ -365,10 +365,68 @@ tests on Windows x64 and macOS ARM64, and race detection with atomic coverage on
 Linux x64. Jobs record their actual Go version, OS, and architecture. Each race
 job publishes function coverage in its run summary and retains a downloadable
 `coverage-linux-stable` profile artifact for 30 days. Missing profiles or failed
-uploads fail that job; no overall coverage threshold is enforced. The `build`
+uploads fail that job. The `build`
 check succeeds only when every compatibility, smoke, and race/coverage job
 succeeds. These checks preserve the platform-local numerical and
 [Reproducibility](#reproducibility) guarantees.
+
+### Coverage reporting and patch policy
+
+The race/coverage job uploads only `coverage.out` to
+[Codecov](https://app.codecov.io/gh/atankeev/kmeans) using the pinned official
+v5 action. A missing, empty, or invalid profile fails CI; upload errors also fail
+the job. Upload success means the report was accepted for processing, not that
+the patch coverage target passed.
+
+The repository's [Codecov configuration](codecov.yml) sets a target of **85%**
+and a threshold of **0%** for the expected `codecov/patch` check: changed executable lines
+must reach at least 85% coverage, with no allowed shortfall. The overall
+`codecov/project` result is informational and has no blocking coverage target.
+Documentation-only and tests-only PRs with no changed executable lines pass the
+patch evaluation when Codecov processes the report. Missing expected coverage
+must not be treated as a passing coverage result.
+
+Patch coverage measures execution, not assertion quality or branch coverage.
+Go reports statement/block coverage, which Codecov maps to changed lines; small
+diffs and moved code may produce coarse results. Removing tests without changing
+executable code can lower overall coverage without failing the patch target.
+
+Repository owner setup is required: install or authorize the Codecov GitHub App
+for this repository so it can publish PR checks, and configure the repository in
+Codecov. Add the Codecov upload token as the GitHub Actions repository secret
+`CODECOV_TOKEN`; never put the token in a committed file. OIDC would require
+`id-token: write` and override the supplied token. The requested token setup
+keeps `contents: read` without extra token permissions or a privileged PR workflow.
+
+Fork PRs do not receive Actions secrets. Codecov supports
+[tokenless public fork uploads](https://docs.codecov.com/docs/codecov-tokens#commits-on-unprotected-branches)
+through the official action's unprotected-branch naming; verify this path for
+the repository. Dependabot PRs use Dependabot secrets rather than ordinary
+Actions secrets: configure a Dependabot repository secret named `CODECOV_TOKEN`
+as described in the [action's setup guide](https://github.com/codecov/codecov-action/tree/v5#dependabot).
+This separate Dependabot secret remains pending owner setup.
+Keep fork and Dependabot uploads working without granting their workflows write
+permissions or exposing secrets to untrusted code.
+
+For failures, inspect **Actions → Go → Linux x64 / Go stable race and coverage**,
+including the profile validation and Codecov upload steps. Download
+`coverage-linux-stable` to inspect the exact report. Fix malformed reports or
+owner authentication/App settings, then rerun the failed job; after a service
+outage, rerun once Codecov recovers. If upload succeeded but a check is missing,
+inspect the commit and processing status in Codecov and its GitHub App access.
+Do not weaken protection or mark a missing report as passed to unblock a merge.
+
+The 85% patch configuration does not itself make `codecov/patch` a required
+GitHub check. Existing required checks remain `lint` and `build`; protection
+rollout is tracked in [issue #34](https://github.com/atankeev/kmeans/issues/34).
+Before requiring the observed check name, verify below-85% failure and
+at-least-85% success, no-executable-line PRs, missing reports, and real fork and
+Dependabot uploads. Verify that a failed required patch check blocks merging
+without merging dummy changes. These external-service and protection checks
+remain unverified until recorded on
+[issue #39](https://github.com/atankeev/kmeans/issues/39).
+
+### Linting
 
 Install the pinned lint tool explicitly, then run the same checks as CI:
 
