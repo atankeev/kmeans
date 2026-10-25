@@ -1,0 +1,82 @@
+name: Publish release
+
+on:
+  workflow_run:
+    workflows: [Go, Vulnerability scan]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: release-please-main
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.id == github.event.repository.id)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.candidate.outputs.ready }}
+      candidate: ${{ steps.candidate.outputs.candidate }}
+    steps:
+      # Only trusted main code executes with workflow_run permissions.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Identify release PR and verify exact-SHA CI
+        id: candidate
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const {selectCandidate, validateCandidate} = require('./scripts/release.cjs');
+            const api = {github, context, core};
+            const candidate = await selectCandidate(api);
+            if (!candidate) {
+              core.info('No merged pending release PR; nothing to publish.');
+              return;
+            }
+            core.setOutput('candidate', JSON.stringify(candidate));
+            core.setOutput('ready', await validateCandidate(api, candidate));
+  publish:
+    needs: validate
+    if: needs.validate.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Revalidate candidate and create immutable annotated tag
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          CANDIDATE: ${{ needs.validate.outputs.candidate }}
+        with:
+          script: |
+            const {publishTag} = require('./scripts/release.cjs');
+            await publishTag({github, context, core}, JSON.parse(process.env.CANDIDATE));
+      - name: Publish reviewed GitHub Release
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        with:
+          token: ${{ github.token }}
+          target-branch: main
+          # Fixed publication settings avoid loading configuration from moving main.
+          # PR maintenance still uses the manifest configuration.
+          release-type: go
+          path: .
+          include-component-in-tag: false
+          skip-github-pull-request: true
