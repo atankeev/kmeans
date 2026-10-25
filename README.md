@@ -19,6 +19,7 @@ context or support interruption.
 - [Concurrency and ownership](#concurrency-and-ownership)
 - [Algorithm](#algorithm)
 - [API documentation](#api-documentation)
+- [Releases](#releases)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -335,6 +336,13 @@ go doc . Cluster
 go doc . Result
 go doc . WithTolerance
 ```
+
+## Releases
+
+Release Please prepares a version and changelog in a release PR. Merging that
+reviewed PR authorizes publication after CI verifies its exact merge commit.
+See the [release runbook](docs/releases.md) for setup, stable API and versioning
+policy, approval, recovery, and Go module/documentation verification.
 
 ## Contributing
 

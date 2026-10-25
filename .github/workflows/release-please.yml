@@ -1,0 +1,52 @@
+name: Release PR
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Shared with publication: do not update a release PR while it is being released.
+concurrency:
+  group: release-please-main
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Require release PR credential
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_PLEASE_TOKEN" ]; then
+            echo 'Configure the RELEASE_PLEASE_TOKEN repository secret; see docs/releases.md.' >&2
+            exit 1
+          fi
+      - name: Wait for any merged pending release
+        id: pending
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const {pendingPulls} = require('./scripts/release.cjs');
+            const pending = await pendingPulls({github, context});
+            core.setOutput('exists', pending.length > 0);
+            if (pending.length) core.info('Publication or recovery must finish before preparing another release PR.');
+      - name: Prepare release PR
+        if: steps.pending.outputs.exists == 'false'
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          target-branch: main
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
