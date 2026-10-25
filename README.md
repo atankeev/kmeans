@@ -322,6 +322,9 @@ bound for `Cluster`.
 
 ## API Documentation
 
+Browse the [API documentation](https://pkg.go.dev/github.com/atankeev/kmeans)
+on pkg.go.dev for the latest indexed release.
+
 `Cluster(data [][]float64, k int, opts ...Option) (*Result, error)` is the public
 entry point. [Cluster and Result](kmeans.go), [option factories and
 defaults](options.go), and [error sentinels](errors.go) have GoDoc comments in the
